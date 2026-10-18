@@ -1,0 +1,41 @@
+{
+  "appId": "com.ankiaudiodeck.creator",
+  "productName": "Anki Audio Card Creator",
+  "directories": {
+    "app": ".",
+    "output": "exec"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      },
+      {
+        "target": "portable",
+        "arch": [
+          "x64"
+        ]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Anki Audio Card Creator",
+    "artifactName": "AnkiCardCreator-Setup-${version}.${ext}",
+    "deleteAppDataOnUninstall": false
+  },
+  "portable": {
+    "artifactName": "AnkiCardCreator-Portable-${version}.${ext}"
+  },
+  "files": [
+    "dist/anki-card-creator/**/*",
+    "dist-electron/**/*",
+    "package.json"
+  ]
+}

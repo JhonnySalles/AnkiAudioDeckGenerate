@@ -1,0 +1,1070 @@
+<div class="flex flex-col h-screen bg-slate-950 text-slate-100 select-none overflow-hidden">
+
+  <!-- ================= TOP NAVIGATION BAR ================= -->
+  <header class="flex items-center justify-between px-6 py-3.5 bg-slate-900/80 border-b border-slate-800 backdrop-blur-md z-20">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+        <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z" />
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-base font-bold text-white tracking-wide flex items-center gap-2">
+          Anki Audio Deck Creator
+          <span class="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">Desktop</span>
+        </h1>
+        <p class="text-xs text-slate-400">Geração e gerenciamento ágil de Decks a partir de Músicas / Lyrics</p>
+      </div>
+    </div>
+
+    <!-- Center: AnkiConnect Status & Deck Destination -->
+    <div class="flex items-center space-x-3">
+      <div class="flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border"
+           [ngClass]="ankiStatus.connected ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-amber-500/10 border-amber-500/30 text-amber-400'">
+        <span class="w-2 h-2 rounded-full mr-2"
+              [ngClass]="ankiStatus.connected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'"></span>
+        <span>{{ ankiStatus.connected ? 'Anki Conectado (v' + ankiStatus.version + ')' : 'AnkiConnect Desconectado' }}</span>
+        <button *ngIf="!ankiStatus.connected"
+                (click)="checkAnkiConnection()"
+                class="ml-2 underline hover:text-amber-300 transition-colors">
+          Reconectar
+        </button>
+      </div>
+
+      <div class="flex items-center px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300">
+        <span class="text-slate-400 mr-1.5">Baralho Ativo:</span>
+        <span class="text-indigo-400 font-semibold">{{ settings.deckName || 'Default' }}</span>
+      </div>
+
+      <div class="flex items-center px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300">
+        <span class="text-indigo-400 font-bold mr-1">{{ createdCount }}</span> cards salvos hoje
+      </div>
+    </div>
+
+    <!-- Right: Actions -->
+    <div class="flex items-center space-x-2">
+      <button (click)="isHistoryOpen = !isHistoryOpen"
+              class="relative px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 transition-all flex items-center gap-1.5">
+        <svg class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        Histórico
+        <span *ngIf="sessionHistory.length > 0" class="px-1.5 py-0.2 bg-indigo-600 text-white rounded-full text-[10px]">
+          {{ sessionHistory.length }}
+        </span>
+      </button>
+
+      <button (click)="isSettingsOpen = true"
+              class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-all"
+              title="Configurações">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ================= NOTIFICATION TOAST ================= -->
+  <div *ngIf="notification"
+       class="fixed top-16 right-6 z-50 flex items-center px-4 py-3 rounded-xl shadow-2xl border transition-all animate-bounce"
+       [ngClass]="{
+         'bg-emerald-950/90 border-emerald-500/40 text-emerald-200': notification.type === 'success',
+         'bg-red-950/90 border-red-500/40 text-red-200': notification.type === 'error',
+         'bg-indigo-950/90 border-indigo-500/40 text-indigo-200': notification.type === 'info'
+       }">
+    <span class="mr-2 text-base font-bold">
+      {{ notification.type === 'success' ? '✓' : notification.type === 'error' ? '⚠' : 'ℹ' }}
+    </span>
+    <span class="text-xs font-medium">{{ notification.message }}</span>
+  </div>
+
+  <!-- ================= MAIN WORKSPACE: DECK & CARDS GRID ================= -->
+  <main class="flex-1 flex overflow-hidden">
+
+    <div class="flex-1 flex flex-col p-6 overflow-hidden max-w-7xl mx-auto w-full space-y-4">
+
+      <!-- Top Deck Toolbar: Tags & Action Buttons -->
+      <div class="glass-panel rounded-2xl p-4 shadow-xl border border-slate-800 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+
+        <!-- Tags Management (Persistente para o Deck) -->
+        <div class="flex-1 min-w-[280px]">
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+              </svg>
+              Tags do Deck
+            </label>
+            <span class="text-[10px] text-slate-400">Pressione Enter para adicionar</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5 p-1.5 glass-input rounded-xl min-h-[42px]">
+            <span *ngFor="let tag of tagsList; let i = index"
+                  class="inline-flex items-center px-2 py-0.5 rounded-lg bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 text-xs font-medium">
+              #{{ tag }}
+              <button type="button" (click)="removeTag(i)" class="ml-1.5 hover:text-red-400 text-xs font-bold">×</button>
+            </span>
+            <input type="text"
+                   [(ngModel)]="tagsInput"
+                   (keydown.enter)="addTag()"
+                   placeholder="+ tag..."
+                   class="flex-1 bg-transparent border-none text-xs text-slate-200 focus:outline-none min-w-[70px] px-1" />
+          </div>
+        </div>
+
+        <!-- Action Controls: Import, Paste, Add, Save -->
+        <div class="flex flex-wrap items-center justify-end gap-2.5">
+          <!-- Botão Principal: Extrair Letras & Sincronização -->
+          <button (click)="openExtractorModal()"
+                  class="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg shadow-purple-600/30">
+            <svg class="w-4 h-4 text-purple-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Extrair Letras & Sync
+          </button>
+
+          <!-- Hidden File Input for TXT/TSV -->
+          <input type="file" #txtFileInput (change)="onTxtFileSelected($event)" accept=".txt,.tsv" class="hidden" />
+
+          <button (click)="txtFileInput.click()"
+                  class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition-all flex items-center gap-1.5 shadow-sm"
+                  title="Carregar arquivo .txt com lyrics e áudios">
+            <svg class="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            Importar .txt
+          </button>
+
+          <button (click)="openPasteModal()"
+                  class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition-all flex items-center gap-1.5 shadow-sm"
+                  title="Colar texto de lyrics tabuladas ou estrofes">
+            <svg class="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            Colar Letras
+          </button>
+
+          <button (click)="openNewCardModal()"
+                  class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition-all flex items-center gap-1.5 shadow-sm">
+            <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Novo Card
+          </button>
+
+          <button *ngIf="cards.length > 0"
+                  (click)="clearAllCards()"
+                  class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-red-500/20 hover:text-red-300 border border-slate-700 text-xs font-semibold text-slate-400 transition-all"
+                  title="Limpar todos os cards da tabela">
+            Limpar
+          </button>
+
+          <!-- Main Batch Save Button -->
+          <button (click)="saveDeck()"
+                  [disabled]="isSavingDeck || cards.length === 0"
+                  class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs shadow-xl shadow-indigo-600/25 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+            <svg *ngIf="!isSavingDeck" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            <span *ngIf="!isSavingDeck">Salvar Deck no Anki ({{ cards.length }})</span>
+            <span *ngIf="isSavingDeck" class="flex items-center gap-2">
+              <span class="animate-spin w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full"></span>
+              Salvando {{ saveProgress.current }}/{{ saveProgress.total }}...
+            </span>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- ================= CARDS GRID / TABLE CONTAINER ================= -->
+      <div class="flex-1 glass-panel rounded-2xl border border-slate-800 flex flex-col overflow-hidden shadow-2xl">
+
+        <!-- Table Header Summary -->
+        <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-900/40">
+          <div class="flex items-center space-x-2">
+            <h2 class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+              <span>Cards Gerados para o Deck</span>
+              <span class="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono text-[11px] border border-indigo-500/30">
+                {{ cards.length }} itens
+              </span>
+            </h2>
+          </div>
+          <div class="text-[11px] text-slate-400">
+            Clique em <span class="text-indigo-400 font-medium">Editar</span> para alterar Frente, Verso ou Áudio no popup
+          </div>
+        </div>
+
+        <!-- Table Body or Empty State -->
+        <div class="flex-1 overflow-auto">
+
+          <!-- Empty State -->
+          <div *ngIf="cards.length === 0" class="h-full flex flex-col items-center justify-center p-8 text-center space-y-4">
+            <div class="w-16 h-16 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+              <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+              </svg>
+            </div>
+            <div class="max-w-md">
+              <h3 class="text-sm font-bold text-slate-200">Nenhum card carregado no momento</h3>
+              <p class="text-xs text-slate-400 mt-1">
+                Importe um arquivo de música (.txt), cole as lyrics traduzidas ou clique em "Novo Card" para começar a compor seu deck com áudios.
+              </p>
+            </div>
+            <div class="flex items-center gap-3 pt-2">
+              <button (click)="txtFileInput.click()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/25 transition-all">
+                Importar Arquivo .txt
+              </button>
+              <button (click)="openPasteModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-all">
+                Colar Lyrics
+              </button>
+            </div>
+          </div>
+
+          <!-- Cards Table -->
+          <table *ngIf="cards.length > 0" class="w-full text-left border-collapse">
+            <thead class="sticky top-0 bg-slate-900/95 backdrop-blur-sm border-b border-slate-800 z-10 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              <tr>
+                <th class="py-3 px-3 w-12 text-center">#</th>
+                <th class="py-3 px-4 w-1/3">Frente (Frase Original)</th>
+                <th class="py-3 px-4 w-1/3">Verso (Tradução / Significado)</th>
+                <th class="py-3 px-3 w-36">Tempo</th>
+                <th class="py-3 px-4 w-40">Áudio</th>
+                <th class="py-3 px-4">Tags</th>
+                <th class="py-3 px-4 w-24 text-center">Ações</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60 text-xs">
+              <tr *ngFor="let card of cards; let i = index"
+                  class="hover:bg-slate-800/40 transition-colors group"
+                  [ngClass]="{
+                    'bg-emerald-950/15': card.status === 'saved',
+                    'bg-red-950/15': card.status === 'error',
+                    'bg-indigo-950/15': card.status === 'saving'
+                  }">
+
+                <!-- Index & Status -->
+                <td class="py-3.5 px-3 text-center">
+                  <div class="flex items-center justify-center gap-1.5 font-mono text-[11px] text-slate-400">
+                    <span *ngIf="card.status === 'saved'" class="w-2 h-2 rounded-full bg-emerald-400" title="Salvo com sucesso"></span>
+                    <span *ngIf="card.status === 'saving'" class="w-2 h-2 rounded-full bg-indigo-400 animate-ping" title="Salvando..."></span>
+                    <span *ngIf="card.status === 'error'" class="w-2 h-2 rounded-full bg-red-400" title="Erro ao salvar"></span>
+                    <span *ngIf="!card.status || card.status === 'pending'" class="w-2 h-2 rounded-full bg-slate-600"></span>
+                    <span>{{ i + 1 }}</span>
+                  </div>
+                </td>
+
+                <!-- Front -->
+                <td class="py-3.5 px-4">
+                  <p class="font-medium text-slate-100 leading-relaxed font-sans">{{ card.front }}</p>
+                </td>
+
+                <!-- Back -->
+                <td class="py-3.5 px-4">
+                  <p class="text-slate-300 leading-relaxed font-sans">{{ card.back }}</p>
+                </td>
+
+                <!-- Tempo (3 Colunas) -->
+                <td class="py-3.5 px-3">
+                  <span *ngIf="card.startTime" class="font-mono text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/25 px-1.5 py-0.5 rounded whitespace-nowrap">
+                    {{ card.startTime }}{{ card.endTime ? ' → ' + card.endTime : '' }}
+                  </span>
+                  <span *ngIf="!card.startTime" class="text-[11px] text-slate-500 italic">--</span>
+                </td>
+
+                <!-- Audio -->
+                <td class="py-3.5 px-4">
+                  <div *ngIf="card.audioFileName || card.audioUrl || card.audioPath" class="flex items-center space-x-2">
+                    <button (click)="toggleRowAudio(card)"
+                            class="w-7 h-7 rounded-lg flex items-center justify-center transition-all flex-shrink-0"
+                            [ngClass]="activePlayingCardId === card.id ? 'bg-indigo-600 text-white animate-pulse' : 'bg-slate-800 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-slate-700'"
+                            title="Tocar / Pausar áudio deste card">
+                      <svg *ngIf="activePlayingCardId !== card.id" class="w-3.5 h-3.5 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                      </svg>
+                      <svg *ngIf="activePlayingCardId === card.id" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6" />
+                      </svg>
+                    </button>
+                    <span class="text-[11px] text-emerald-400 font-mono truncate max-w-[130px]" [title]="card.audioFileName || 'Áudio gravado'">
+                      {{ card.audioFileName || 'gravacao.mp3' }}
+                    </span>
+                  </div>
+                  <span *ngIf="!card.audioFileName && !card.audioUrl && !card.audioPath" class="text-[11px] text-slate-500 italic">
+                    Sem áudio
+                  </span>
+                </td>
+
+                <!-- Tags -->
+                <td class="py-3.5 px-4">
+                  <div class="flex flex-wrap gap-1">
+                    <span *ngFor="let t of card.tags" class="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-mono text-slate-400 border border-slate-700">
+                      #{{ t }}
+                    </span>
+                  </div>
+                </td>
+
+                <!-- Actions -->
+                <td class="py-3.5 px-4 text-center">
+                  <div class="flex items-center justify-center space-x-1">
+                    <button (click)="openEditModal(i)"
+                            class="p-1.5 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 transition-colors"
+                            title="Editar este card no popup">
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <button (click)="deleteCard(i)"
+                            class="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                            title="Excluir este card">
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </td>
+
+              </tr>
+            </tbody>
+          </table>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ================= HISTORY SIDEBAR / DRAWER ================= -->
+    <aside *ngIf="isHistoryOpen"
+           class="w-96 border-l border-slate-800 bg-slate-900/90 flex flex-col z-10 backdrop-blur-md animate-in slide-in-from-right duration-200">
+      <div class="flex items-center justify-between p-4 border-b border-slate-800">
+        <h2 class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+          <svg class="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Histórico da Sessão ({{ sessionHistory.length }})
+        </h2>
+        <button (click)="isHistoryOpen = false" class="text-slate-400 hover:text-slate-200 text-sm">✕</button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-4 space-y-3">
+        <div *ngIf="sessionHistory.length === 0" class="text-center py-12 text-slate-500 text-xs">
+          Nenhum card salvo nesta sessão ainda.
+        </div>
+
+        <div *ngFor="let card of sessionHistory"
+             class="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 hover:border-indigo-500/40 transition-all space-y-1.5">
+          <div class="flex items-center justify-between text-[11px] text-slate-400">
+            <span class="font-medium text-indigo-400">#{{ card.deckName }}</span>
+            <span class="font-mono text-[10px]">{{ card.time }}</span>
+          </div>
+
+          <p class="text-xs font-semibold text-slate-100 line-clamp-2">{{ card.front }}</p>
+          <p class="text-xs text-slate-400 line-clamp-2">{{ card.back }}</p>
+
+          <div *ngIf="card.audioFileName" class="flex items-center gap-1 text-[11px] text-emerald-400 font-mono pt-1">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+            </svg>
+            <span class="truncate">{{ card.audioFileName }}</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- ================= POPUP / MODAL DE EDIÇÃO DO CARD ================= -->
+  <div *ngIf="isEditModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-150">
+    <div class="glass-panel bg-slate-900 rounded-2xl w-full max-w-2xl p-6 shadow-2xl border border-slate-700 space-y-5 max-h-[92vh] overflow-y-auto">
+
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h2 class="text-sm font-bold text-white flex items-center gap-2">
+          <div class="w-6 h-6 rounded-lg bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </div>
+          {{ editingCardIndex !== null ? 'Editar Card #' + (editingCardIndex + 1) : 'Criar Novo Card' }}
+        </h2>
+        <button (click)="closeEditModal()" class="text-slate-400 hover:text-white text-base">✕</button>
+      </div>
+
+      <!-- Field: Frente (Front) -->
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <label class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+            Frente (Expressão / Frase de Estudo)
+          </label>
+          <span class="text-[11px] text-slate-400 font-mono">{{ editForm.front.length }} caracteres</span>
+        </div>
+        <textarea #modalFrontInput
+                  [(ngModel)]="editForm.front"
+                  rows="3"
+                  placeholder="Ex: I yelled back when I heard thunder"
+                  class="w-full glass-input p-3.5 rounded-xl text-sm font-normal resize-none focus:ring-2 focus:ring-indigo-500/30 leading-relaxed font-sans"></textarea>
+      </div>
+
+      <!-- Field: Verso (Back) -->
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <label class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-purple-500"></span>
+            Verso (Tradução / Significado / Resposta)
+          </label>
+          <span class="text-[11px] text-slate-400 font-mono">{{ editForm.back.length }} caracteres</span>
+        </div>
+        <textarea [(ngModel)]="editForm.back"
+                  rows="2"
+                  placeholder="Ex: Eu gritei quando ouvi o trovão"
+                  class="w-full glass-input p-3.5 rounded-xl text-sm font-normal resize-none focus:ring-2 focus:ring-purple-500/30 leading-relaxed font-sans"></textarea>
+      </div>
+
+      <!-- Field: Tempos da Fala (Início e Fim) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
+        <div>
+          <label class="block text-xs font-bold text-amber-300 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+            Tempo Inicial da Fala
+          </label>
+          <input type="text"
+                 [(ngModel)]="editForm.startTime"
+                 placeholder="Ex: 00:15.300"
+                 class="w-full glass-input px-3.5 py-2 rounded-xl text-xs font-mono" />
+          <p class="text-[10px] text-slate-500 mt-1">Início da frase na música (mm:ss.mmm)</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-amber-300 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+            Tempo Final da Fala
+          </label>
+          <input type="text"
+                 [(ngModel)]="editForm.endTime"
+                 placeholder="Ex: 00:18.450"
+                 class="w-full glass-input px-3.5 py-2 rounded-xl text-xs font-mono" />
+          <p class="text-[10px] text-slate-500 mt-1">Fim da frase na música (mm:ss.mmm)</p>
+        </div>
+      </div>
+
+      <!-- Audio Section: Recorder, Upload and Preview -->
+      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <div class="flex items-center justify-between mb-2.5">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+            </svg>
+            <span class="text-xs font-bold text-slate-200 uppercase tracking-wider">Áudio da Pronúncia</span>
+          </div>
+          <span class="text-[11px] text-slate-400">Atalho: <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-[10px] text-indigo-300">Ctrl + Espaço</kbd></span>
+        </div>
+
+        <!-- If Audio Loaded -->
+        <div *ngIf="modalAudioFile" class="flex items-center justify-between p-3 rounded-xl bg-slate-800/80 border border-slate-700/80">
+          <div class="flex items-center space-x-3 overflow-hidden">
+            <button (click)="toggleModalAudioPlayback()"
+                    class="w-9 h-9 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center transition-all shadow-md shadow-indigo-600/30 flex-shrink-0"
+                    title="Tocar / Pausar áudio">
+              <svg class="w-4 h-4 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+              </svg>
+            </button>
+            <div class="truncate">
+              <p class="text-xs font-semibold text-slate-100 truncate font-mono">{{ modalAudioFile.filename }}</p>
+              <p class="text-[11px] text-slate-400 truncate">{{ modalAudioFile.path }}</p>
+            </div>
+          </div>
+
+          <button (click)="clearModalAudio()"
+                  class="p-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors ml-3 flex-shrink-0"
+                  title="Remover áudio">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- If No Audio Loaded: Buttons & Drop Zone -->
+        <div *ngIf="!modalAudioFile"
+             (drop)="onModalAudioDrop($event)"
+             (dragover)="onDragOver($event)"
+             class="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-xl border-2 border-dashed border-slate-700/80 hover:border-indigo-500/50 bg-slate-950/40 transition-all">
+
+          <div class="text-center sm:text-left">
+            <p class="text-xs font-medium text-slate-300">Arraste um áudio aqui (.mp3, .wav, .m4a)</p>
+            <p class="text-[11px] text-slate-500">ou grave diretamente pelo microfone</p>
+          </div>
+
+          <div class="flex items-center space-x-2 w-full sm:w-auto justify-end">
+            <!-- Record Button -->
+            <button (click)="toggleRecording()"
+                    class="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
+                    [ngClass]="isRecording ? 'bg-red-600 text-white animate-pulse shadow-lg shadow-red-600/30' : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'">
+              <span class="w-2.5 h-2.5 rounded-full" [ngClass]="isRecording ? 'bg-white' : 'bg-red-500'"></span>
+              {{ isRecording ? 'Parar (' + formatSeconds(recordingTime) + ')' : 'Gravar Voz' }}
+            </button>
+
+            <!-- Upload File Button -->
+            <button (click)="selectModalAudioFile()"
+                    class="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition-all flex items-center justify-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              Buscar Arquivo
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Field: Tags do Card -->
+      <div>
+        <label class="block text-xs font-bold text-slate-200 uppercase tracking-wider mb-1.5">Tags Individuais do Card</label>
+        <div class="flex flex-wrap items-center gap-1.5 p-1.5 glass-input rounded-xl min-h-[40px]">
+          <span *ngFor="let t of editForm.tags; let i = index"
+                class="inline-flex items-center px-2 py-0.5 rounded-lg bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 text-xs font-medium">
+            #{{ t }}
+            <button type="button" (click)="removeModalTag(i)" class="ml-1.5 hover:text-red-400 text-xs font-bold">×</button>
+          </span>
+          <input type="text"
+                 [(ngModel)]="editModalTagInput"
+                 (keydown.enter)="addModalTag()"
+                 placeholder="+ tag..."
+                 class="flex-1 bg-transparent border-none text-xs text-slate-200 focus:outline-none min-w-[70px] px-1" />
+        </div>
+      </div>
+
+      <!-- Modal Footer Action Buttons -->
+      <div class="flex items-center justify-between pt-3 border-t border-slate-800">
+        <button (click)="clearModalFields()"
+                class="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-all">
+          Limpar Campos
+        </button>
+
+        <div class="flex items-center space-x-2">
+          <button (click)="closeEditModal()"
+                  class="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-slate-200 transition-all">
+            Cancelar
+          </button>
+
+          <button (click)="saveEditModal()"
+                  class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs shadow-xl shadow-indigo-600/25 transition-all flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            <span>Salvar Card</span>
+            <kbd class="ml-1 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono tracking-wider">Ctrl + Enter</kbd>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= MODAL: COLAR LETRAS (LYRICS) ================= -->
+  <div *ngIf="isPasteModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-150">
+    <div class="glass-panel bg-slate-900 rounded-2xl w-full max-w-2xl p-6 shadow-2xl border border-slate-700 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h2 class="text-sm font-bold text-white flex items-center gap-2">
+          <svg class="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+          Colar Linhas de Texto & Sincronização
+        </h2>
+        <button (click)="isPasteModalOpen = false" class="text-slate-400 hover:text-white">✕</button>
+      </div>
+
+      <!-- Guia de Sintaxe com Badges -->
+      <div class="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80 space-y-2 text-xs">
+        <div class="flex items-center justify-between">
+          <span class="text-slate-300 font-semibold text-[11px] uppercase tracking-wider">Formatos Aceitos (Tempo Inicial, Final e Tradução Opcionais):</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-1.5 font-mono text-[11px]">
+          <div class="bg-slate-900/80 px-2 py-1 rounded border border-slate-800 text-slate-300">
+            <span class="text-indigo-400 font-bold">[00:15.30-00:16.30]</span><span class="text-purple-400">|</span>Frente<span class="text-purple-400">|</span>Verso
+          </div>
+          <div class="bg-slate-900/80 px-2 py-1 rounded border border-slate-800 text-slate-300">
+            <span class="text-indigo-400 font-bold">[00:15.30]</span><span class="text-purple-400">|</span>Frente<span class="text-purple-400">|</span>Verso
+          </div>
+          <div class="bg-slate-900/80 px-2 py-1 rounded border border-slate-800 text-slate-300">
+            <span class="text-indigo-400 font-bold">[00:15.30-00:16.30]</span><span class="text-purple-400">|</span>Apenas Frente
+          </div>
+          <div class="bg-slate-900/80 px-2 py-1 rounded border border-slate-800 text-slate-300">
+            Frente<span class="text-purple-400">[TAB]</span>Verso <span class="text-slate-500 font-sans text-[10px]">(Anki TSV)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Seletor de Separador de Coluna -->
+      <div class="flex flex-wrap items-center gap-3 pt-1">
+        <label class="text-xs font-semibold text-slate-300 whitespace-nowrap">Separador das Colunas:</label>
+        <div class="flex items-center gap-1.5">
+          <button type="button"
+                  (click)="pasteDelimiter = 'auto'"
+                  [ngClass]="pasteDelimiter === 'auto' ? 'bg-purple-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                  class="px-2.5 py-1 rounded-lg text-xs transition-colors border border-slate-700/60">
+            Auto-detectar
+          </button>
+          <button type="button"
+                  (click)="pasteDelimiter = '|'"
+                  [ngClass]="pasteDelimiter === '|' ? 'bg-purple-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                  class="px-2.5 py-1 rounded-lg text-xs transition-colors border border-slate-700/60 font-mono">
+            Pipe ( | )
+          </button>
+          <button type="button"
+                  (click)="pasteDelimiter = '\t'"
+                  [ngClass]="pasteDelimiter === '\t' ? 'bg-purple-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                  class="px-2.5 py-1 rounded-lg text-xs transition-colors border border-slate-700/60">
+            Tab ( \t )
+          </button>
+          <button type="button"
+                  (click)="pasteDelimiter = ';'"
+                  [ngClass]="pasteDelimiter === ';' ? 'bg-purple-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                  class="px-2.5 py-1 rounded-lg text-xs transition-colors border border-slate-700/60 font-mono">
+            Ponto e vírgula ( ; )
+          </button>
+          <button type="button"
+                  (click)="pasteDelimiter = '-'"
+                  [ngClass]="pasteDelimiter === '-' ? 'bg-purple-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                  class="px-2.5 py-1 rounded-lg text-xs transition-colors border border-slate-700/60 font-mono">
+            Hífen ( - )
+          </button>
+          <button type="button"
+                  (click)="pasteDelimiter = 'custom'"
+                  [ngClass]="pasteDelimiter === 'custom' ? 'bg-purple-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                  class="px-2.5 py-1 rounded-lg text-xs transition-colors border border-slate-700/60">
+            Outro...
+          </button>
+        </div>
+        <div *ngIf="pasteDelimiter === 'custom'" class="flex items-center gap-1.5 animate-in fade-in duration-100">
+          <input [(ngModel)]="pasteCustomDelimiter"
+                 placeholder="Ex: || ou #"
+                 class="w-24 px-2 py-1 glass-input rounded-lg text-xs font-mono text-center" />
+        </div>
+      </div>
+
+      <textarea [(ngModel)]="pasteLyricsText"
+                rows="8"
+                placeholder="Exemplo:&#10;[00:15.30-00:16.30]|I feel your breath|Eu sinto sua respiração&#10;[00:18.45-00:20.10]|Upon my skin|Sobre minha pele&#10;[00:22.00]|Linha com tempo inicial apenas|Tradução&#10;[00:25.00-00:28.00]|Linha sem tradução verso"
+                class="w-full glass-input p-3.5 rounded-xl text-xs font-mono resize-none focus:ring-2 focus:ring-purple-500/30 leading-relaxed"></textarea>
+
+      <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+        <span class="text-[11px] text-slate-500 italic">
+          A tradução (verso) é opcional linha a linha.
+        </span>
+        <div class="flex items-center space-x-2">
+          <button (click)="isPasteModalOpen = false" class="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-slate-200">
+            Cancelar
+          </button>
+          <button (click)="previewPastedLyrics()"
+                  class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-indigo-500/30 font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5"
+                  title="Conferir tempos, frente e verso na tabela antes de adicionar">
+            <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            Pré-visualizar em 3 Colunas
+          </button>
+          <button (click)="processPastedLyrics()" class="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs shadow-lg shadow-purple-600/30">
+            Adicionar à Tabela
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= SETTINGS MODAL ================= -->
+  <div *ngIf="isSettingsOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
+    <div class="glass-panel bg-slate-900 rounded-2xl w-full max-w-xl p-6 shadow-2xl border border-slate-700 space-y-4">
+
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h2 class="text-sm font-bold text-white flex items-center gap-2">
+          <svg class="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          </svg>
+          Configurações de Exportação e Anki
+        </h2>
+        <button (click)="isSettingsOpen = false" class="text-slate-400 hover:text-white">✕</button>
+      </div>
+
+      <!-- Baralho Anki (Deck de Destino) -->
+      <div>
+        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">Baralho no Anki (Deck de Destino)</label>
+        <input type="text"
+               [(ngModel)]="settings.deckName"
+               list="deckSuggestionsSettings"
+               placeholder="Default"
+               class="w-full glass-input px-3.5 py-2 rounded-xl text-xs font-medium" />
+        <datalist id="deckSuggestionsSettings">
+          <option *ngFor="let d of availableDecks" [value]="d">{{ d }}</option>
+        </datalist>
+        <p class="text-[11px] text-slate-500 mt-1">Nome do baralho para onde os cards gerados serão enviados.</p>
+      </div>
+
+      <!-- Mode selection -->
+      <div>
+        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Modo de Salvamento</label>
+        <div class="grid grid-cols-3 gap-2">
+          <label class="flex flex-col p-3 rounded-xl border cursor-pointer transition-all"
+                 [ngClass]="settings.saveMode === 'both' ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300' : 'bg-slate-800/60 border-slate-700 text-slate-400'">
+            <input type="radio" [(ngModel)]="settings.saveMode" value="both" class="hidden">
+            <span class="text-xs font-bold">⚡ Ambos</span>
+            <span class="text-[10px] opacity-80 mt-1">AnkiConnect + Arquivo .txt</span>
+          </label>
+
+          <label class="flex flex-col p-3 rounded-xl border cursor-pointer transition-all"
+                 [ngClass]="settings.saveMode === 'ankiconnect' ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300' : 'bg-slate-800/60 border-slate-700 text-slate-400'">
+            <input type="radio" [(ngModel)]="settings.saveMode" value="ankiconnect" class="hidden">
+            <span class="text-xs font-bold">🔌 AnkiConnect</span>
+            <span class="text-[10px] opacity-80 mt-1">Direto no Anki Desktop</span>
+          </label>
+
+          <label class="flex flex-col p-3 rounded-xl border cursor-pointer transition-all"
+                 [ngClass]="settings.saveMode === 'file' ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300' : 'bg-slate-800/60 border-slate-700 text-slate-400'">
+            <input type="radio" [(ngModel)]="settings.saveMode" value="file" class="hidden">
+            <span class="text-xs font-bold">📁 Arquivo TSV</span>
+            <span class="text-[10px] opacity-80 mt-1">Apenas grava no .txt</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- AnkiConnect URL -->
+      <div>
+        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">URL do AnkiConnect</label>
+        <input type="text" [(ngModel)]="settings.ankiConnectUrl"
+               placeholder="http://127.0.0.1:8765"
+               class="w-full glass-input px-3.5 py-2 rounded-xl text-xs font-mono" />
+      </div>
+
+      <!-- Arquivo TXT de exportação -->
+      <div>
+        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">Arquivo TSV de Exportação (.txt)</label>
+        <div class="flex items-center space-x-2">
+          <input type="text" [(ngModel)]="settings.exportTxtPath"
+                 placeholder="Caminho do arquivo .txt"
+                 class="flex-1 glass-input px-3.5 py-2 rounded-xl text-xs font-mono" />
+          <button (click)="browseExportFile()"
+                  class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200">
+            Buscar
+          </button>
+          <button (click)="openExportPath()"
+                  class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200"
+                  title="Abrir pasta no Explorer">
+            Pasta
+          </button>
+        </div>
+      </div>
+
+      <!-- Pasta collection.media do Anki -->
+      <div>
+        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">Pasta collection.media do Anki</label>
+        <div class="flex items-center space-x-2">
+          <input type="text" [(ngModel)]="settings.ankiCollectionMediaDir"
+                 placeholder="C:\Users\...\AppData\Roaming\Anki2\User 1\collection.media"
+                 class="flex-1 glass-input px-3.5 py-2 rounded-xl text-xs font-mono" />
+          <button (click)="browseMediaDir()"
+                  class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200">
+            Buscar
+          </button>
+        </div>
+        <p class="text-[11px] text-slate-500 mt-1">Os áudios serão copiados para esta pasta para que o Anki consiga reproduzi-los.</p>
+      </div>
+
+      <!-- Footer Buttons -->
+      <div class="flex items-center justify-end space-x-2 pt-3 border-t border-slate-800">
+        <button (click)="isSettingsOpen = false"
+                class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-slate-200">
+          Cancelar
+        </button>
+        <button (click)="saveSettings()"
+                class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-lg shadow-indigo-600/30">
+          Salvar Configurações
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= MODAL: EXTRATOR DE LETRAS & SYNC ================= -->
+  <div *ngIf="isExtractorModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
+    <div class="glass-panel bg-slate-900 rounded-2xl w-full max-w-2xl p-6 shadow-2xl border border-slate-700 space-y-4 max-h-[92vh] overflow-y-auto">
+
+      <!-- Header -->
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h2 class="text-sm font-bold text-white flex items-center gap-2">
+          <div class="w-6 h-6 rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          Extrator de Letras & Sincronização de Tempo
+        </h2>
+        <button (click)="closeExtractorModal()" class="text-slate-400 hover:text-white text-base">✕</button>
+      </div>
+
+      <!-- Tabs Navigation -->
+      <div class="flex items-center gap-1.5 p-1 bg-slate-950/60 rounded-xl border border-slate-800">
+        <button (click)="extractorTab = 'lrclib'"
+                [ngClass]="extractorTab === 'lrclib' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'"
+                class="flex-1 py-1.5 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5">
+          <span>🔍</span> LRCLIB (Busca)
+        </button>
+        <button (click)="extractorTab = 'url'"
+                [ngClass]="extractorTab === 'url' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'"
+                class="flex-1 py-1.5 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5">
+          <span>🌐</span> URL / Web
+        </button>
+        <button (click)="extractorTab = 'file'"
+                [ngClass]="extractorTab === 'file' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'"
+                class="flex-1 py-1.5 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5">
+          <span>📁</span> Arquivo
+        </button>
+        <button (click)="extractorTab = 'paste'"
+                [ngClass]="extractorTab === 'paste' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'"
+                class="flex-1 py-1.5 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5">
+          <span>📋</span> Colar
+        </button>
+      </div>
+
+      <!-- Tab Content: LRCLIB -->
+      <div *ngIf="extractorTab === 'lrclib'" class="space-y-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">Música (Título)</label>
+            <input type="text"
+                   [(ngModel)]="searchTrack"
+                   (keydown.enter)="searchLrclibTracks()"
+                   placeholder="Ex: One Last Breath"
+                   class="w-full glass-input px-3 py-2 rounded-xl text-xs font-medium" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">Artista / Banda</label>
+            <div class="flex gap-2">
+              <input type="text"
+                     [(ngModel)]="searchArtist"
+                     (keydown.enter)="searchLrclibTracks()"
+                     placeholder="Ex: Creed"
+                     class="flex-1 glass-input px-3 py-2 rounded-xl text-xs font-medium" />
+              <button (click)="searchLrclibTracks()"
+                      [disabled]="isSearchingLrclib"
+                      class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all disabled:opacity-50">
+                <span *ngIf="!isSearchingLrclib">Buscar</span>
+                <span *ngIf="isSearchingLrclib" class="animate-spin w-3 h-3 border-2 border-white border-t-transparent rounded-full inline-block"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Resultados da Busca -->
+        <div *ngIf="lrclibResults.length > 0" class="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+          <p class="text-[11px] text-slate-400 font-semibold">Selecione uma faixa para extrair:</p>
+          <div *ngFor="let track of lrclibResults"
+               (click)="selectLrclibTrack(track)"
+               class="p-2.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between"
+               [ngClass]="selectedLrclibTrack?.id === track.id ? 'bg-indigo-600/25 border-indigo-500 text-indigo-200' : 'bg-slate-800/40 border-slate-700/60 hover:bg-slate-800 text-slate-300'">
+            <div class="truncate mr-2">
+              <span class="font-bold text-xs text-white">{{ track.trackName }}</span>
+              <span class="text-xs text-slate-400 ml-1.5">({{ track.artistName }})</span>
+            </div>
+            <div class="flex items-center gap-1.5 flex-shrink-0">
+              <span *ngIf="track.syncedLyrics" class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono border border-emerald-500/30">
+                ⚡ Sincronizada
+              </span>
+              <span *ngIf="track.duration" class="text-[10px] text-slate-400 font-mono">
+                {{ formatSeconds(track.duration) }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- URL opcional de Tradução -->
+        <div class="pt-2 border-t border-slate-800">
+          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1 flex items-center justify-between">
+            <span>URL de Tradução (Opcional - Letras / Vagalume)</span>
+            <span class="text-[10px] text-indigo-300 font-normal">Combina com o tempo do LRCLIB</span>
+          </label>
+          <input type="text"
+                 [(ngModel)]="extractorTranslationUrl"
+                 placeholder="Ex: https://www.letras.mus.br/creed/3655/traducao.html"
+                 class="w-full glass-input px-3.5 py-2 rounded-xl text-xs font-mono" />
+        </div>
+      </div>
+
+      <!-- Tab Content: URL -->
+      <div *ngIf="extractorTab === 'url'" class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">URL da Página de Letra / Tradução</label>
+          <input type="text"
+                 [(ngModel)]="extractorUrl"
+                 placeholder="Ex: https://www.letras.mus.br/artista/musica/traducao.html"
+                 class="w-full glass-input px-3.5 py-2 rounded-xl text-xs font-mono" />
+          <p class="text-[11px] text-slate-400 mt-1">Identifica automaticamente o texto original e a tradução verso a verso.</p>
+        </div>
+      </div>
+
+      <!-- Tab Content: Arquivo -->
+      <div *ngIf="extractorTab === 'file'" class="space-y-3">
+        <div class="p-4 rounded-xl border-2 border-dashed border-slate-700 bg-slate-950/40 text-center space-y-2">
+          <p class="text-xs text-slate-300">Carregue um arquivo com tempos ou letras</p>
+          <p class="text-[11px] text-slate-500">Formatos aceitos: <strong>.lrc</strong> (tempo), <strong>.srt</strong>, <strong>.vtt</strong> (legendas) ou <strong>.html</strong> salvo</p>
+          <button (click)="selectLocalLyricsFile()"
+                  class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold">
+            Selecionar Arquivo no Computador
+          </button>
+          <p *ngIf="extractorFileName" class="text-xs text-emerald-400 font-mono font-bold">
+            Arquivo ativo: {{ extractorFileName }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Tab Content: Colar -->
+      <div *ngIf="extractorTab === 'paste'" class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
+            Letra com Sincronização (LRC, SRT/VTT ou [ini-fim]|Frente|Verso)
+          </label>
+          <textarea [(ngModel)]="extractorPasteTiming"
+                    rows="5"
+                    placeholder="Exemplos aceitos:&#10;[00:15.30-00:16.30]|Frase da música|Tradução opcional&#10;[00:15.30]|Frase da música|Tradução&#10;[00:18.45] Letra no padrão LRC tradicional..."
+                    class="w-full glass-input p-3 rounded-xl text-xs font-mono resize-none"></textarea>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
+            Tradução Linha por Linha (Opcional)
+          </label>
+          <textarea [(ngModel)]="extractorPasteTranslation"
+                    rows="4"
+                    placeholder="Tradução da primeira frase...&#10;Tradução da segunda frase..."
+                    class="w-full glass-input p-3 rounded-xl text-xs font-mono resize-none"></textarea>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="flex items-center justify-end space-x-2 pt-3 border-t border-slate-800">
+        <button (click)="closeExtractorModal()"
+                class="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-slate-200">
+          Cancelar
+        </button>
+
+        <button (click)="runExtraction()"
+                [disabled]="isExtracting"
+                class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-xl shadow-purple-600/30 transition-all flex items-center gap-2 disabled:opacity-50">
+          <span *ngIf="!isExtracting">Processar & Extrair Letras</span>
+          <span *ngIf="isExtracting" class="flex items-center gap-1.5">
+            <span class="animate-spin w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full"></span>
+            Extraindo...
+          </span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= MODAL: PRÉ-VISUALIZAÇÃO (3 COLUNAS: TEMPO, LETRA, TRADUÇÃO) ================= -->
+  <div *ngIf="isPreviewOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
+    <div class="glass-panel bg-slate-900 rounded-2xl w-full max-w-5xl p-6 shadow-2xl border border-slate-700 space-y-4 max-h-[92vh] flex flex-col">
+
+      <!-- Preview Header -->
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3 flex-shrink-0">
+        <div>
+          <h2 class="text-sm font-bold text-white flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            Pré-visualização dos Cards Extraídos (3 Colunas)
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5">
+            Revise as 3 colunas (Tempo, Letra/Frente e Tradução/Verso) antes de adicionar ao deck.
+            <span *ngIf="previewTitle" class="text-indigo-300 font-semibold ml-1">Música: {{ previewTitle }}</span>
+            <span *ngIf="previewArtist" class="text-indigo-300 font-semibold ml-1">({{ previewArtist }})</span>
+          </p>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button (click)="toggleAllPreview(true)" class="text-xs text-indigo-400 hover:text-indigo-300 underline font-medium">Marcar Todos</button>
+          <span class="text-slate-600">•</span>
+          <button (click)="toggleAllPreview(false)" class="text-xs text-slate-400 hover:text-slate-200 underline">Desmarcar Todos</button>
+          <button (click)="closePreview()" class="text-slate-400 hover:text-white text-base ml-2">✕</button>
+        </div>
+      </div>
+
+      <!-- Preview 3-Columns Table -->
+      <div class="flex-1 overflow-auto border border-slate-800 rounded-xl bg-slate-950/40">
+        <table class="w-full text-left border-collapse text-xs">
+          <thead class="sticky top-0 bg-slate-900/95 backdrop-blur-sm border-b border-slate-800 z-10 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+            <tr>
+              <th class="py-2.5 px-3 w-10 text-center">☑</th>
+              <th class="py-2.5 px-3 w-40">1. Tempo (Início → Fim)</th>
+              <th class="py-2.5 px-4 w-1/2">2. Letra (Frente / Original)</th>
+              <th class="py-2.5 px-4 w-1/2">3. Tradução (Verso)</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-800/60">
+            <tr *ngFor="let item of previewLines; let i = index" class="hover:bg-slate-800/40 transition-colors">
+              <!-- Checkbox -->
+              <td class="py-2.5 px-3 text-center">
+                <input type="checkbox" [(ngModel)]="item.selected" class="rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-indigo-500/20" />
+              </td>
+
+              <!-- Coluna 1: Tempo -->
+              <td class="py-2.5 px-3 font-mono text-[11px]">
+                <div class="flex items-center gap-1">
+                  <input type="text"
+                         [(ngModel)]="item.startTime"
+                         placeholder="00:00.000"
+                         class="w-20 glass-input px-1.5 py-1 rounded text-[11px] font-mono text-amber-300" />
+                  <span class="text-slate-500">→</span>
+                  <input type="text"
+                         [(ngModel)]="item.endTime"
+                         placeholder="00:00.000"
+                         class="w-20 glass-input px-1.5 py-1 rounded text-[11px] font-mono text-amber-300" />
+                </div>
+              </td>
+
+              <!-- Coluna 2: Letra (Frente) -->
+              <td class="py-2.5 px-4">
+                <input type="text"
+                       [(ngModel)]="item.original"
+                       placeholder="Frase original..."
+                       class="w-full glass-input px-2.5 py-1 rounded text-xs text-slate-100 font-medium" />
+              </td>
+
+              <!-- Coluna 3: Tradução (Verso) -->
+              <td class="py-2.5 px-4">
+                <input type="text"
+                       [(ngModel)]="item.translation"
+                       placeholder="Tradução correspondente..."
+                       class="w-full glass-input px-2.5 py-1 rounded text-xs text-purple-200" />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Preview Footer -->
+      <div class="flex items-center justify-between pt-3 border-t border-slate-800 flex-shrink-0">
+        <button (click)="closePreview()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-slate-200">
+          Voltar / Cancelar
+        </button>
+
+        <div class="flex items-center space-x-2">
+          <button (click)="applyPreviewToDeck(true)"
+                  class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition-all"
+                  title="Limpa a grid atual e insere esses cards">
+            Substituir Grid com Estes
+          </button>
+
+          <button (click)="applyPreviewToDeck(false)"
+                  class="px-6 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/25 transition-all">
+            Adicionar Selecionados à Grid
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= HIDDEN AUDIO ELEMENTS ================= -->
+  <audio #modalAudioPlayer [src]="modalAudioPreviewUrl" class="hidden"></audio>
+  <audio #rowAudioPlayer [src]="rowAudioUrl" (ended)="onRowAudioEnded()" class="hidden"></audio>
+
+</div>
+
+

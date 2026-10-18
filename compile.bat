@@ -1,0 +1,3 @@
+@echo off
+echo Compilando e gerando o executavel (.exe) do Anki Audio Card Creator...
+yarn build:electron

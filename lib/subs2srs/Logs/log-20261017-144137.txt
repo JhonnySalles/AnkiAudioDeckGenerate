@@ -1,0 +1,5 @@
+﻿14:41:37.243:    subs2srs version: 29.7.0.0
+14:41:37.244:    Microsoft Windows NT 6.2.9200.0
+14:41:37.248:    FormMain_Load
+14:41:49.320:    FormMain_FormClosing
+
