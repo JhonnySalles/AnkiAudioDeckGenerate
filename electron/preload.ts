@@ -29,5 +29,44 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('lyrics:search-lrclib', params),
   getLrclib: (artist: string, track: string) =>
     ipcRenderer.invoke('lyrics:get-lrclib', artist, track),
-  selectLyricsFile: () => ipcRenderer.invoke('dialog:select-lyrics-file')
+  selectLyricsFile: () => ipcRenderer.invoke('dialog:select-lyrics-file'),
+
+  // Subtitle & Media Mode
+  probeMedia: (filePath: string) => ipcRenderer.invoke('media:probe', filePath),
+  cutAudio: (options: any) => ipcRenderer.invoke('media:cut-audio', options),
+  extractSnapshot: (options: any) => ipcRenderer.invoke('media:snapshot', options),
+  extractEmbeddedSubtitle: (filePath: string, subStreamIndex: number) =>
+    ipcRenderer.invoke('media:extract-sub', filePath, subStreamIndex),
+  selectVideoFile: () => ipcRenderer.invoke('dialog:select-video-file'),
+  selectSubFiles: () => ipcRenderer.invoke('dialog:select-sub-files'),
+  exportSubtitleProject: (project: any, options?: any) =>
+    ipcRenderer.invoke('subs:export-project', { project, options }),
+  onExportProgress: (callback: (progress: any) => void) => {
+    const sub = (_: any, data: any) => callback(data);
+    ipcRenderer.on('subs:export-progress', sub);
+    return () => ipcRenderer.removeListener('subs:export-progress', sub);
+  },
+  saveProjectDialog: (project: any, defaultPath?: string) =>
+    ipcRenderer.invoke('project:save-dialog', project, defaultPath),
+  saveProjectToPath: (filePath: string, project: any) =>
+    ipcRenderer.invoke('project:save-to-path', filePath, project),
+  loadProjectDialog: () => ipcRenderer.invoke('project:load-dialog'),
+
+  // DevTools & Window Menu
+  toggleDevTools: () => ipcRenderer.invoke('app:toggle-devtools'),
+  onMenuSwitchMode: (callback: (mode: string) => void) => {
+    const sub = (_: any, mode: string) => callback(mode);
+    ipcRenderer.on('menu:switch-mode', sub);
+    return () => ipcRenderer.removeListener('menu:switch-mode', sub);
+  },
+  onMenuTriggerAction: (callback: (action: string) => void) => {
+    const sub = (_: any, action: string) => callback(action);
+    ipcRenderer.on('menu:action', sub);
+    return () => ipcRenderer.removeListener('menu:action', sub);
+  },
+  onMainLog: (callback: (log: any) => void) => {
+    const sub = (_: any, log: any) => callback(log);
+    ipcRenderer.on('app:main-log', sub);
+    return () => ipcRenderer.removeListener('app:main-log', sub);
+  }
 });

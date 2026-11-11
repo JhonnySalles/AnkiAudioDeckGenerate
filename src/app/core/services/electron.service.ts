@@ -52,6 +52,25 @@ export interface ElectronAPI {
   searchLrclib: (params: { track?: string; artist?: string; q?: string }) => Promise<any[]>;
   getLrclib: (artist: string, track: string) => Promise<any | null>;
   selectLyricsFile: () => Promise<{ filePath: string; filename: string; content: string } | null>;
+
+  // Subtitle Project & Media
+  probeMedia: (filePath: string) => Promise<any>;
+  cutAudio: (options: any) => Promise<string>;
+  extractSnapshot: (options: any) => Promise<string>;
+  extractEmbeddedSubtitle: (filePath: string, subStreamIndex: number) => Promise<string>;
+  selectVideoFile: () => Promise<{ filePath: string; filename: string; probeData: any } | null>;
+  selectSubFiles: () => Promise<Array<{ filePath: string; filename: string; content: string }> | null>;
+  exportSubtitleProject: (project: any, options?: any) => Promise<{ txtPath: string; exportedCount: number; errors: string[] }>;
+  onExportProgress: (callback: (progress: any) => void) => () => void;
+  saveProjectDialog: (project: any, defaultPath?: string) => Promise<string | null>;
+  saveProjectToPath: (filePath: string, project: any) => Promise<string>;
+  loadProjectDialog: () => Promise<{ filePath: string; project: any } | null>;
+
+  // DevTools & Menu
+  toggleDevTools: () => Promise<void>;
+  onMenuSwitchMode: (callback: (mode: string) => void) => () => void;
+  onMenuTriggerAction: (callback: (action: string) => void) => () => void;
+  onMainLog: (callback: (log: any) => void) => () => void;
 }
 
 declare global {
@@ -167,5 +186,89 @@ export class ElectronService {
       return null;
     }
     return await this.api.selectLyricsFile();
+  }
+
+  // ================= SUBTITLE PROJECT & MEDIA =================
+  public async probeMedia(filePath: string): Promise<any> {
+    if (!this.isElectron) return null;
+    return await this.api.probeMedia(filePath);
+  }
+
+  public async cutAudio(options: any): Promise<string> {
+    if (!this.isElectron) return '';
+    return await this.api.cutAudio(options);
+  }
+
+  public async extractSnapshot(options: any): Promise<string> {
+    if (!this.isElectron) return '';
+    return await this.api.extractSnapshot(options);
+  }
+
+  public async extractEmbeddedSubtitle(filePath: string, subStreamIndex: number): Promise<string> {
+    if (!this.isElectron) return '';
+    return await this.api.extractEmbeddedSubtitle(filePath, subStreamIndex);
+  }
+
+  public async selectVideoFile(): Promise<{ filePath: string; filename: string; probeData: any } | null> {
+    if (!this.isElectron) return null;
+    return await this.api.selectVideoFile();
+  }
+
+  public async selectSubFiles(): Promise<Array<{ filePath: string; filename: string; content: string }> | null> {
+    if (!this.isElectron) return null;
+    return await this.api.selectSubFiles();
+  }
+
+  public async exportSubtitleProject(project: any, options?: any): Promise<{ txtPath: string; exportedCount: number; errors: string[] }> {
+    if (!this.isElectron) return { txtPath: '', exportedCount: 0, errors: ['Apenas no app Desktop'] };
+    return await this.api.exportSubtitleProject(project, options);
+  }
+
+  public onExportProgress(callback: (progress: any) => void): () => void {
+    if (!this.isElectron || !this.api.onExportProgress) return () => {};
+    return this.api.onExportProgress(callback);
+  }
+
+  public async saveProjectDialog(project: any, defaultPath?: string): Promise<string | null> {
+    if (!this.isElectron) return null;
+    return await this.api.saveProjectDialog(project, defaultPath);
+  }
+
+  public async saveProjectToPath(filePath: string, project: any): Promise<string> {
+    if (!this.isElectron) return '';
+    return await this.api.saveProjectToPath(filePath, project);
+  }
+
+  public async loadProjectDialog(): Promise<{ filePath: string; project: any } | null> {
+    if (!this.isElectron) return null;
+    return await this.api.loadProjectDialog();
+  }
+
+  // ================= DEVTOOLS & MENU =================
+  public async toggleDevTools(): Promise<void> {
+    if (this.isElectron) {
+      await this.api.toggleDevTools();
+    }
+  }
+
+  public onMenuSwitchMode(callback: (mode: string) => void): () => void {
+    if (this.isElectron && this.api.onMenuSwitchMode) {
+      return this.api.onMenuSwitchMode(callback);
+    }
+    return () => {};
+  }
+
+  public onMenuTriggerAction(callback: (action: string) => void): () => void {
+    if (this.isElectron && this.api.onMenuTriggerAction) {
+      return this.api.onMenuTriggerAction(callback);
+    }
+    return () => {};
+  }
+
+  public onMainLog(callback: (log: any) => void): () => void {
+    if (this.isElectron && this.api.onMainLog) {
+      return this.api.onMainLog(callback);
+    }
+    return () => {};
   }
 }

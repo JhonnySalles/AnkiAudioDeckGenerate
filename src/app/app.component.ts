@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ElectronService, AppSettings, AnkiConnectStatus, SaveCardResult, CardPayload } from './core/services/electron.service';
 import { LyricsParserService, ParsedLyricLine } from './core/services/lyrics-parser.service';
+import { LogService, LogEntry } from './core/services/log.service';
+import { SubtitleViewComponent } from './subtitle-view/subtitle-view.component';
 
 export interface DeckCardItem {
   id: string;
@@ -37,10 +39,12 @@ export interface HistoryCard {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, SubtitleViewComponent],
   templateUrl: './app.component.html'
 })
 export class AppComponent implements OnInit, OnDestroy {
+  // Modo de Trabalho da Aplicação: 'music' ou 'subtitles'
+  public currentMode: 'music' | 'subtitles' = 'subtitles';
   @ViewChild('modalFrontInput') modalFrontInputRef!: ElementRef<HTMLTextAreaElement>;
   @ViewChild('modalAudioPlayer') modalAudioPlayerRef!: ElementRef<HTMLAudioElement>;
   @ViewChild('rowAudioPlayer') rowAudioPlayerRef!: ElementRef<HTMLAudioElement>;
@@ -131,8 +135,12 @@ export class AppComponent implements OnInit, OnDestroy {
   // UI State
   public isSettingsOpen = false;
   public isHistoryOpen = false;
+  public isLogConsoleOpen = false;
+  public logFilterLevel: 'all' | 'error' | 'warn' | 'info' = 'all';
+  public logSearchTerm = '';
   public notification: { message: string; type: 'success' | 'error' | 'info' } | null = null;
   private notificationTimeout: any = null;
+  private unsubs: Array<() => void> = [];
 
   // History & Stats
   public sessionHistory: HistoryCard[] = [];
@@ -140,15 +148,32 @@ export class AppComponent implements OnInit, OnDestroy {
 
   constructor(
     public electronService: ElectronService,
-    public lyricsParser: LyricsParserService
+    public lyricsParser: LyricsParserService,
+    public logService: LogService
   ) {}
 
   public async ngOnInit(): Promise<void> {
     await this.loadSettings();
     await this.checkAnkiConnection();
+
+    // Ouvintes de menu do Electron
+    const unsubMode = this.electronService.onMenuSwitchMode((mode: string) => {
+      if (mode === 'subtitles' || mode === 'music') {
+        this.currentMode = mode;
+      }
+    });
+    this.unsubs.push(unsubMode);
+
+    const unsubAction = this.electronService.onMenuTriggerAction((action: string) => {
+      if (action === 'open-logs') {
+        this.isLogConsoleOpen = true;
+      }
+    });
+    this.unsubs.push(unsubAction);
   }
 
   public ngOnDestroy(): void {
+    this.unsubs.forEach(u => u());
     if (this.recordingInterval) {
       clearInterval(this.recordingInterval);
     }
@@ -1002,6 +1027,10 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
+  public openDevTools(): void {
+    void this.electronService.toggleDevTools();
+  }
+
   public formatSeconds(sec: number): string {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
@@ -1016,6 +1045,51 @@ export class AppComponent implements OnInit, OnDestroy {
     this.notificationTimeout = setTimeout(() => {
       this.notification = null;
     }, 4000);
+  }
+
+  // ================= LOG CONSOLE HELPERS =================
+  public getFilteredLogs(): LogEntry[] {
+    let logs = this.logService.getLogs();
+    if (this.logFilterLevel !== 'all') {
+      logs = logs.filter(l => l.level === this.logFilterLevel);
+    }
+    if (this.logSearchTerm.trim()) {
+      const term = this.logSearchTerm.toLowerCase();
+      logs = logs.filter(l =>
+        l.message.toLowerCase().includes(term) ||
+        l.source.toLowerCase().includes(term) ||
+        l.level.toLowerCase().includes(term)
+      );
+    }
+    return logs;
+  }
+
+  public getLogCounts(): { total: number; errors: number; warns: number; infos: number } {
+    const all = this.logService.getLogs();
+    let errors = 0;
+    let warns = 0;
+    let infos = 0;
+    for (const l of all) {
+      if (l.level === 'error') errors++;
+      else if (l.level === 'warn') warns++;
+      else infos++;
+    }
+    return { total: all.length, errors, warns, infos };
+  }
+
+  public async copyLogsToClipboard(): Promise<void> {
+    const logs = this.getFilteredLogs();
+    if (logs.length === 0) {
+      this.showToast('Nenhum log para copiar.', 'info');
+      return;
+    }
+    const text = logs.map(l => `[${l.timestamp}] [${l.level.toUpperCase()}] [${l.source}] ${l.message}`).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      this.showToast(`${logs.length} logs copiados para a área de transferência!`, 'success');
+    } catch {
+      this.showToast('Erro ao copiar logs para a área de transferência.', 'error');
+    }
   }
 }
 

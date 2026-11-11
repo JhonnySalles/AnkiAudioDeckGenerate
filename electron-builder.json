@@ -37,5 +37,11 @@
     "dist/anki-card-creator/**/*",
     "dist-electron/**/*",
     "package.json"
+  ],
+  "extraResources": [
+    {
+      "from": "lib/subs2srs/Utils/ffmpeg/ffmpeg.exe",
+      "to": "bin/ffmpeg.exe"
+    }
   ]
 }

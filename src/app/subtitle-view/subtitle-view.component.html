@@ -1,0 +1,744 @@
+<div class="h-full flex flex-col bg-slate-900 text-slate-100 overflow-hidden font-sans"
+     (dragover)="onDragOver($event)"
+     (drop)="onFileDrop($event)">
+
+  <!-- BARRA DE CABEÇALHO DO PROJETO DE LEGENDAS -->
+  <header class="bg-slate-800 border-b border-slate-700/80 px-4 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
+    <div class="flex items-center gap-3">
+      <div class="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/30">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
+        </svg>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <input [(ngModel)]="project.mediaName" placeholder="Nome do Filme / Episódio"
+                 class="bg-slate-900 border border-slate-700 px-2.5 py-1 text-sm font-semibold text-slate-100 rounded focus:border-indigo-500 focus:outline-none w-72" />
+          <span class="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 font-mono">
+            {{ project.rows.length }} linhas
+          </span>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-0.5">
+          Geração de cards com múltiplos idiomas, corte inteligente e sincronização.
+        </p>
+      </div>
+    </div>
+
+    <!-- BOTÕES DE AÇÃO SUPERIOR -->
+    <div class="flex items-center gap-2">
+      <button (click)="addMediaSource()"
+              class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg border border-slate-600 flex items-center gap-1.5 transition">
+        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+        <span>+ Mídia</span>
+      </button>
+
+      <button (click)="addSubtitles()"
+              class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg border border-slate-600 flex items-center gap-1.5 transition">
+        <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        <span>+ Legenda(s)</span>
+      </button>
+
+      <button (click)="autoAlign()" [disabled]="project.tracks.length === 0"
+              class="px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-xs font-medium rounded-lg flex items-center gap-1.5 transition disabled:opacity-40">
+        <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <span>Auto-Alinhar</span>
+      </button>
+
+      <!-- BOTÕES DESFAZER / REFAZER (CTRL+Z / CTRL+Y) -->
+      <div class="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-0.5">
+        <button (click)="undo()" [disabled]="!history.canUndo()"
+                class="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-700 rounded disabled:opacity-30 disabled:hover:bg-transparent flex items-center gap-1"
+                title="Desfazer última alteração (Ctrl+Z)">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a5 5 0 015 5v2M3 10l6-6m-6 6l6 6" />
+          </svg>
+          <span>Desfazer</span>
+        </button>
+
+        <button (click)="redo()" [disabled]="!history.canRedo()"
+                class="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-700 rounded disabled:opacity-30 disabled:hover:bg-transparent flex items-center gap-1"
+                title="Refazer alteração (Ctrl+Y ou Ctrl+Shift+Z)">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10H11a5 5 0 00-5 5v2m15-7l-6-6m6 6l-6 6" />
+          </svg>
+          <span>Refazer</span>
+        </button>
+      </div>
+
+      <button (click)="isOutputModalOpen = true"
+              class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg border border-slate-600 flex items-center gap-1.5 transition">
+        <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+        <span>Formato TXT</span>
+      </button>
+
+      <div class="h-6 w-px bg-slate-700 mx-1"></div>
+
+      <!-- BOTÕES SALVAR / ABRIR -->
+      <button (click)="saveProject()"
+              [title]="currentProjectFilePath ? 'Salvar Projeto (Ctrl+S) em: ' + currentProjectFilePath : 'Salvar Projeto (Ctrl+S) - escolher local'"
+              class="px-2.5 py-1 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition flex items-center gap-1.5 text-xs font-medium border border-transparent hover:border-slate-600">
+        <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+        </svg>
+        <span>Salvar</span>
+      </button>
+
+      <button (click)="loadProject()"
+              title="Abrir Projeto (.ankisubs.json)"
+              class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+        </svg>
+      </button>
+
+      <button (click)="openExportModal()" [disabled]="isExporting || project.rows.length === 0"
+              class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg shadow-sm flex items-center gap-1.5 transition disabled:opacity-50">
+        <svg *ngIf="!isExporting" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+        </svg>
+        <svg *ngIf="isExporting" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+        </svg>
+        <span>Exportar Anki...</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- PAINEL DE FAIXAS E CONFIGURAÇÃO DE SINCRONIZAÇÃO -->
+  <div *ngIf="project.tracks.length > 0" class="bg-slate-800/60 border-b border-slate-700 px-4 py-2.5 flex flex-wrap items-center gap-4 text-xs shrink-0">
+    <!-- SELEÇÃO DE ID E SEQUÊNCIA -->
+    <div class="flex items-center gap-2">
+      <span class="text-slate-400 font-medium">Tempo do ID:</span>
+      <select [(ngModel)]="project.timingTrackId" class="bg-slate-900 border border-slate-700 text-slate-200 px-2 py-1 rounded focus:outline-none">
+        <option *ngFor="let t of project.tracks" [value]="t.id">{{ t.label }} ({{ t.cues.length }} falas)</option>
+      </select>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <span class="text-slate-400 font-medium">Sequência:</span>
+      <select [(ngModel)]="project.sequenceTrackId" class="bg-slate-900 border border-slate-700 text-slate-200 px-2 py-1 rounded focus:outline-none">
+        <option *ngFor="let t of project.tracks" [value]="t.id">{{ t.label }}</option>
+      </select>
+    </div>
+
+    <!-- LISTA DE FAIXAS COM CONTROLE DE OFFSET -->
+    <div class="flex items-center gap-3 overflow-x-auto py-0.5">
+      <div *ngFor="let track of project.tracks; let idx = index"
+           class="flex items-center gap-2 px-2.5 py-1 rounded bg-slate-900 border border-slate-700">
+        <span class="font-bold text-indigo-400">#{{ idx + 1 }} {{ track.label }}</span>
+
+        <!-- Stream e Fonte -->
+        <select [(ngModel)]="track.mediaSourceId" class="bg-slate-800 text-[11px] text-slate-300 border border-slate-700 rounded px-1 py-0.5" title="Mídia vinculada">
+          <option *ngFor="let s of project.mediaSources" [value]="s.id">{{ s.label }}</option>
+        </select>
+
+        <!-- Faixa de Áudio da Mídia (se houver mais de 1 ou multicanal) -->
+        <ng-container *ngIf="getMediaSource(track.mediaSourceId) as src">
+          <select *ngIf="src.audioStreams && src.audioStreams.length > 1"
+                  [(ngModel)]="track.audioStreamIndex"
+                  class="bg-slate-800 text-[11px] text-amber-300 border border-slate-700 rounded px-1 py-0.5"
+                  title="Faixa de Áudio desta Legenda (Dual Audio)">
+            <option *ngFor="let a of src.audioStreams" [value]="a.index">
+              Áudio #{{ a.index + 1 }}: {{ a.language || a.codec }} {{ a.title ? '(' + a.title + ')' : '' }}
+            </option>
+          </select>
+        </ng-container>
+
+        <!-- Offset -->
+        <div class="flex items-center gap-1" title="Ajuste global de tempo da legenda (ms)">
+          <span class="text-[10px] text-slate-400">Offset:</span>
+          <input type="number" [(ngModel)]="track.offsetMs" (change)="autoAlign()" step="100"
+                 class="w-16 bg-slate-800 border border-slate-700 text-[11px] text-center text-slate-200 rounded px-1 py-0.5" />
+          <span class="text-[10px] text-slate-500">ms</span>
+        </div>
+
+        <button (click)="removeTrack(idx)" class="text-slate-500 hover:text-red-400 text-xs ml-1" title="Remover esta faixa">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ESTADO VAZIO QUANDO NÃO HÁ LEGENDAS -->
+  <div *ngIf="project.tracks.length === 0" class="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400">
+    <div class="w-16 h-16 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-500 mb-4">
+      <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
+      </svg>
+    </div>
+    <h3 class="text-base font-semibold text-slate-200 mb-1">Nenhuma Legenda ou Filme Carregado</h3>
+    <p class="text-xs text-slate-400 max-w-md mb-6">
+      Arraste e solte arquivos aqui ou selecione vídeos (.mkv, .mp4, .ts, etc.), áudios (.wav, .mp3, .flac, etc.) e legendas (.srt, .ass, .vtt, etc.).
+    </p>
+    <div class="flex items-center gap-3">
+      <button (click)="addMediaSource()"
+              class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-xs font-semibold rounded-lg flex items-center gap-2 transition">
+        <span>1. Selecionar Vídeo / Áudio</span>
+      </button>
+      <button (click)="addSubtitles()"
+              class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg flex items-center gap-2 transition shadow-md shadow-indigo-600/20">
+        <span>2. Adicionar Legendas</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- GRID VIRTUAL COM ROLAGEM DE ALTA PERFORMANCE (CDK VIRTUAL SCROLL) -->
+  <div *ngIf="project.tracks.length > 0" class="flex-1 flex flex-col min-h-0 bg-slate-950">
+
+    <!-- CABEÇALHO DA TABELA -->
+    <div class="grid bg-slate-900 border-b border-slate-800 text-[11px] font-semibold text-slate-400 px-3 py-2 shrink-0 select-none"
+         [style.gridTemplateColumns]="'60px 180px repeat(' + project.tracks.length + ', minmax(280px, 1fr)) 40px'">
+      <div># SEQ</div>
+      <div>ID (TEMPO / CENA)</div>
+      <div *ngFor="let t of project.tracks; let i = index" class="flex items-center justify-between pr-2">
+        <span class="truncate">COLUNA {{ i + 1 }}: {{ t.label }}</span>
+        <button (click)="openShiftModal(t.id, 0)"
+                title="Ajustar tempo / Deslocar legenda desta coluna"
+                class="px-2 py-0.5 rounded bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white text-[10px] flex items-center gap-1 transition">
+          <svg class="w-3 h-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>Deslocar (ms)</span>
+        </button>
+      </div>
+      <div class="text-right">EXC</div>
+    </div>
+
+    <!-- LISTA ROLÁVEL COM VIRTUAL SCROLL -->
+    <cdk-virtual-scroll-viewport itemSize="110" class="flex-1 w-full h-full">
+      <div *cdkVirtualFor="let row of project.rows; let rIdx = index"
+           class="grid border-b border-slate-800/80 px-3 py-2 items-center hover:bg-slate-900/50 transition duration-75"
+           [class.opacity-40]="row.excluded"
+           [style.gridTemplateColumns]="'60px 180px repeat(' + project.tracks.length + ', minmax(280px, 1fr)) 40px'">
+
+        <!-- SEQUÊNCIA -->
+        <div class="text-xs font-mono font-bold text-slate-400">
+          {{ rIdx + 1 }}
+        </div>
+
+        <!-- ID E TEMPO DE REFERÊNCIA -->
+        <div class="text-[11px] pr-2">
+          <div class="font-medium text-slate-200 truncate" [title]="project.mediaName">
+            {{ project.mediaName }}
+          </div>
+          <div class="text-[10px] text-indigo-400 font-mono mt-0.5">
+            {{ row.cells[project.timingTrackId]?.startMs ? parser.msToIdTime(row.cells[project.timingTrackId]!.startMs) : '--:--:--' }}
+          </div>
+        </div>
+
+        <!-- CÉLULAS DE CADA FAIXA DE LEGENDA -->
+        <div *ngFor="let track of project.tracks; let tIdx = index" class="pr-2 min-w-0">
+          <div *ngIf="row.cells[track.id] as cell; else emptyCell"
+               class="bg-slate-900/90 border border-slate-700/80 rounded-lg p-2 text-xs flex flex-col justify-between h-[96px] shadow-sm">
+
+            <!-- TOPO DA CÉLULA: TEMPOS E CONTROLES DE RECORTE -->
+            <div class="flex items-center justify-between text-[10px] text-slate-400 pb-1 border-b border-slate-800">
+              <!-- Tempo Inicial e Final com Nudge -->
+              <div class="flex items-center gap-1 font-mono">
+                <span class="text-slate-200 font-semibold">{{ parser.msToFileNameTime(cell.startMs) }}</span>
+                <span class="text-slate-500">→</span>
+                <span class="text-slate-200 font-semibold">{{ parser.msToFileNameTime(cell.endMs) }}</span>
+              </div>
+
+              <!-- BOTÕES DE PLAY, SNAPSHOT E NUDGE -->
+              <div class="flex items-center gap-1">
+                <!-- Play Audio -->
+                <button (click)="playCellAudio(row, track)"
+                        title="Ouvir recorte desta legenda"
+                        class="p-1 rounded bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white transition">
+                  <svg *ngIf="!(playingRowId === row.id && playingAudioTrackId === track.id)" class="w-3.5 h-3.5 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/>
+                  </svg>
+                  <svg *ngIf="playingRowId === row.id && playingAudioTrackId === track.id" class="w-3.5 h-3.5 text-amber-400 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                  </svg>
+                </button>
+
+                <!-- Snapshot Image (oculto se fonte for apenas áudio) -->
+                <button *ngIf="getMediaSource(track.mediaSourceId)?.hasVideo !== false"
+                        (click)="previewSnapshot(row, track)"
+                        title="Ver imagem da cena"
+                        class="p-1 rounded bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white transition">
+                  <svg class="w-3.5 h-3.5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- TEXTO DA LEGENDA (EDITÁVEL INLINE) -->
+            <textarea [(ngModel)]="cell.text" rows="2"
+                      class="bg-transparent border-0 text-slate-100 text-xs resize-none focus:outline-none focus:bg-slate-800/80 rounded px-1 py-0.5 leading-snug w-full">
+            </textarea>
+
+            <!-- RODAPÉ DA CÉLULA: VÍNCULOS, MOVIMENTAÇÃO E DESLOCAMENTO -->
+            <div class="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-800/80">
+              <!-- Nudge de tempos e Deslocamento Temporal -->
+              <div class="flex items-center gap-0.5">
+                <button (click)="nudgeTime(cell, 'start', -100)" class="px-1 hover:bg-slate-700 rounded text-slate-400" title="Início -100ms">-0.1s</button>
+                <button (click)="nudgeTime(cell, 'start', 100)" class="px-1 hover:bg-slate-700 rounded text-slate-400" title="Início +100ms">+0.1s</button>
+                <button (click)="openShiftModal(track.id, rIdx)"
+                        class="px-1.5 py-0.5 ml-0.5 bg-indigo-950/60 hover:bg-indigo-600 border border-indigo-700/50 hover:border-indigo-500 text-indigo-300 hover:text-white rounded text-[9px] font-semibold transition"
+                        title="Deslocamento Temporal (ms) a partir desta linha">
+                  Deslocar ms
+                </button>
+              </div>
+
+              <!-- Vínculos: Mesclar, Desvincular e Movimentação -->
+              <div class="flex items-center gap-0.5">
+                <!-- Mesclar Anterior e Próxima -->
+                <button (click)="mergeWithPrevious(track.id, rIdx)" [disabled]="rIdx === 0"
+                        title="Mesclar esta fala com a linha de cima"
+                        class="px-1 py-0.5 hover:bg-slate-700 rounded text-slate-400 hover:text-slate-200 disabled:opacity-20 text-[9px]">
+                  ▲ Mesclar
+                </button>
+                <button (click)="mergeWithNext(track.id, rIdx)" [disabled]="rIdx === project.rows.length - 1"
+                        title="Mesclar esta fala com a linha de baixo"
+                        class="px-1 py-0.5 hover:bg-slate-700 rounded text-slate-400 hover:text-slate-200 disabled:opacity-20 text-[9px]">
+                  ▼ Mesclar
+                </button>
+
+                <!-- Desvincular para nova linha -->
+                <button (click)="unlinkCell(track.id, rIdx)"
+                        title="Desvincular fala (criar nova linha independente)"
+                        class="p-0.5 hover:bg-slate-700 rounded text-amber-400 hover:text-amber-300"
+                        aria-label="Desvincular">
+                  ✂
+                </button>
+
+                <div class="w-px h-3 bg-slate-700 mx-0.5"></div>
+
+                <!-- Mover célula individualmente -->
+                <button (click)="moveCell(track.id, rIdx, 'up')" [disabled]="rIdx === 0"
+                        title="Mover esta célula para cima"
+                        class="p-0.5 hover:bg-slate-700 rounded text-slate-300 disabled:opacity-20">▲</button>
+                <button (click)="moveCell(track.id, rIdx, 'down')" [disabled]="rIdx === project.rows.length - 1"
+                        title="Mover esta célula para baixo"
+                        class="p-0.5 hover:bg-slate-700 rounded text-slate-300 disabled:opacity-20">▼</button>
+
+                <!-- Deslocar Linhas na Grid (Empurrar / Puxar) -->
+                <button (click)="shiftTrack(track.id, rIdx, 'down')"
+                        title="Empurrar toda esta coluna para baixo a partir desta linha"
+                        class="px-1 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[9px] text-indigo-300">
+                  ↓
+                </button>
+                <button (click)="shiftTrack(track.id, rIdx, 'up')"
+                        title="Puxar toda esta coluna para cima a partir desta linha"
+                        class="px-1 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[9px] text-indigo-300">
+                  ↑
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Célula Vazia (sem fala correspondente) -->
+          <ng-template #emptyCell>
+            <div class="border border-dashed border-slate-800 rounded-lg p-2 flex flex-col items-center justify-center h-[96px] text-slate-600 text-xs">
+              <span>(Sem fala vinculada)</span>
+              <div class="flex items-center gap-1.5 mt-1">
+                <button (click)="openShiftModal(track.id, rIdx)" class="text-[10px] text-indigo-400 hover:underline">Deslocar ms</button>
+                <span class="text-slate-700">•</span>
+                <button (click)="shiftTrack(track.id, rIdx, 'down')" class="text-[10px] text-slate-400 hover:underline">Empurrar ↓</button>
+                <span class="text-slate-700">•</span>
+                <button (click)="shiftTrack(track.id, rIdx, 'up')" class="text-[10px] text-slate-400 hover:underline">Puxar ↑</button>
+              </div>
+            </div>
+          </ng-template>
+        </div>
+
+        <!-- EXCLUIR LINHA DO DECK -->
+        <div class="text-right">
+          <input type="checkbox" [checked]="!row.excluded" (change)="toggleRowExcluded(row)"
+                 title="Incluir na exportação Anki"
+                 class="w-4 h-4 rounded text-indigo-600 bg-slate-800 border-slate-700 focus:ring-0" />
+        </div>
+      </div>
+    </cdk-virtual-scroll-viewport>
+  </div>
+
+  <!-- MODAL DE CONFIGURAÇÃO DE EXPORTAÇÃO PARA O ANKI -->
+  <div *ngIf="isExportModalOpen" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-xl p-6 shadow-2xl flex flex-col gap-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <span>Exportação de Deck para o Anki</span>
+        </h3>
+        <button (click)="isExportModalOpen = false" class="text-slate-400 hover:text-white">✕</button>
+      </div>
+
+      <div class="space-y-4 text-xs">
+        <!-- Caminho do arquivo TXT -->
+        <div>
+          <label class="block font-medium text-slate-300 mb-1">Local do Arquivo de Texto do Deck (.txt):</label>
+          <div class="flex items-center gap-2">
+            <input type="text" [(ngModel)]="exportOptions.outputTxtPath"
+                   [placeholder]="project.mediaName ? project.mediaName + '_anki.txt (pasta padrão)' : 'Deixar em branco para padrão'"
+                   class="flex-1 bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200 focus:outline-none" />
+            <button (click)="browseExportTxtPath()"
+                    class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded font-medium">
+              Procurar...
+            </button>
+          </div>
+        </div>
+
+        <!-- Pasta de mídia opcional -->
+        <div>
+          <label class="block font-medium text-slate-300 mb-1">Pasta Destino das Mídias (.mp3 / .jpg):</label>
+          <div class="flex items-center gap-2">
+            <input type="text" [(ngModel)]="exportOptions.mediaOutputDir"
+                   placeholder="Ex: C:/Decks/MeuDeck_midia (definida automaticamente ao escolher o arquivo .txt)"
+                   class="flex-1 bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200 focus:outline-none" />
+            <button (click)="browseMediaOutputDir()"
+                    class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded font-medium">
+              Procurar...
+            </button>
+          </div>
+          <p class="text-[10px] text-slate-400 mt-1">
+            Preenchida automaticamente como <code class="text-indigo-400 font-mono">&#123;nome_do_txt&#125;_midia</code> no mesmo diretório do arquivo .txt.
+          </p>
+        </div>
+
+        <!-- Opções de Geração de Mídia -->
+        <div class="p-3 bg-slate-950/60 border border-slate-800 rounded-xl space-y-2.5">
+          <span class="block font-bold text-slate-300 text-[11px] uppercase tracking-wider">Opções de Geração:</span>
+
+          <label class="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" [(ngModel)]="exportOptions.generateAudio" class="rounded text-indigo-600 bg-slate-900 border-slate-700" />
+            <span class="text-slate-200 font-medium">Gerar arquivos de Áudio (.mp3) recortados</span>
+          </label>
+
+          <label class="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" [(ngModel)]="exportOptions.generateImages" class="rounded text-indigo-600 bg-slate-900 border-slate-700" />
+            <span class="text-slate-200 font-medium">Gerar imagens de cena (.jpg) em cada fala</span>
+          </label>
+
+          <label class="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" [(ngModel)]="exportOptions.copyToAnkiCollectionMedia" class="rounded text-indigo-600 bg-slate-900 border-slate-700" />
+            <span class="text-slate-200 font-medium">Copiar arquivos para a pasta collection.media do Anki</span>
+          </label>
+
+          <div class="h-px bg-slate-800 my-1"></div>
+          <span class="block font-bold text-indigo-400 text-[11px] uppercase tracking-wider">Aprimoramento de Áudio (.mp3):</span>
+
+          <label class="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" [(ngModel)]="exportOptions.trimSilence" class="rounded text-indigo-600 bg-slate-900 border-slate-700 mt-0.5" />
+            <div class="flex flex-col">
+              <span class="text-slate-200 font-medium">Remover silêncio no início e fim (Silence Trimming)</span>
+              <span class="text-[10px] text-slate-400">Elimina pausas mudas antes e depois da frase sem cortar palavras</span>
+            </div>
+          </label>
+
+          <label class="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" [(ngModel)]="exportOptions.normalizeAudio" class="rounded text-indigo-600 bg-slate-900 border-slate-700 mt-0.5" />
+            <div class="flex flex-col">
+              <span class="text-slate-200 font-medium">Normalizar volume do áudio (EBU R128 para MP3)</span>
+              <span class="text-[10px] text-slate-400">Uniformiza o volume de todos os cards para audição confortável no Anki</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between pt-3 border-t border-slate-800">
+        <span class="text-[11px] text-slate-400">Total de cards: {{ project.rows.length }}</span>
+        <div class="flex items-center gap-2">
+          <button (click)="isExportModalOpen = false" class="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-lg text-xs">
+            Cancelar
+          </button>
+          <button (click)="isExportModalOpen = false; startExport()"
+                  class="px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs shadow-md shadow-emerald-600/20">
+            Iniciar Exportação
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OVERLAY / MODAL DE PROGRESSO DE EXPORTAÇÃO EM TEMPO REAL -->
+  <div *ngIf="isExporting || lastExportResult" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg p-6 shadow-2xl flex flex-col gap-4 text-center">
+
+      <div class="w-14 h-14 rounded-full mx-auto flex items-center justify-center"
+           [ngClass]="isExporting ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30' : 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'">
+        <svg *ngIf="isExporting" class="animate-spin w-7 h-7" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+        </svg>
+        <svg *ngIf="!isExporting && lastExportResult" class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+        </svg>
+      </div>
+
+      <div>
+        <h3 class="text-base font-bold text-white mb-1">
+          {{ isExporting ? 'Processando Exportação...' : 'Exportação Concluída!' }}
+        </h3>
+        <p class="text-xs text-slate-400">
+          {{ isExporting ? exportProgress.status : lastExportResult?.exportedCount + ' cards exportados com sucesso.' }}
+        </p>
+      </div>
+
+      <!-- Barra de Progresso Visual -->
+      <div *ngIf="isExporting" class="space-y-2">
+        <div class="w-full bg-slate-950 border border-slate-800 rounded-full h-3.5 overflow-hidden p-0.5">
+          <div class="bg-gradient-to-r from-indigo-500 to-emerald-400 h-full rounded-full transition-all duration-150"
+               [style.width.%]="exportProgress.percentage"></div>
+        </div>
+        <div class="flex justify-between text-[11px] font-mono text-slate-400">
+          <span>Card {{ exportProgress.current }} de {{ exportProgress.total }}</span>
+          <span class="font-bold text-indigo-300">{{ exportProgress.percentage }}%</span>
+        </div>
+      </div>
+
+      <!-- Ações pós-conclusão -->
+      <div *ngIf="!isExporting && lastExportResult" class="pt-2 flex items-center justify-center gap-3">
+        <button (click)="openExportFolder()"
+                class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 transition">
+          Abrir Arquivo no Explorador
+        </button>
+        <button (click)="lastExportResult = null"
+                class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-sm transition">
+          Concluir
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODAL DE CONFIGURAÇÃO DE SAÍDA (FORMATO TXT) -->
+  <div *ngIf="isOutputModalOpen" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-xl p-6 shadow-2xl flex flex-col gap-4">
+      <div class="flex items-center justify-between border-b border-slate-700 pb-3">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <span>Configuração do Formato TXT</span>
+        </h3>
+        <button (click)="isOutputModalOpen = false" class="text-slate-400 hover:text-white">✕</button>
+      </div>
+
+      <div class="space-y-4 text-xs">
+        <!-- Separador de Coluna -->
+        <div>
+          <label class="block font-medium text-slate-300 mb-1">Separador de Colunas:</label>
+          <div class="flex items-center gap-3">
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" [(ngModel)]="project.output.separator" value="&#9;" name="sep" />
+              <span>Tabulação (\t)</span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" [(ngModel)]="project.output.separator" value="," name="sep" />
+              <span>Vírgula (,)</span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" [(ngModel)]="project.output.separator" value=";" name="sep" />
+              <span>Ponto e vírgula (;)</span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" [(ngModel)]="project.output.separator" value="|" name="sep" />
+              <span>Pipe (|)</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Aspas e Enclosing -->
+        <div>
+          <label class="block font-medium text-slate-300 mb-1">Modo de Aspas:</label>
+          <select [(ngModel)]="project.output.quoteMode" class="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200 w-full focus:outline-none">
+            <option value="when-needed">Apenas quando necessário (padrão)</option>
+            <option value="always">Sempre com aspas duplas ("campo")</option>
+            <option value="none">Sem aspas</option>
+          </select>
+        </div>
+
+        <!-- Prefixo e Sufixo de Linha (para formatos customizados como (campo1, campo2)) -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-medium text-slate-300 mb-1">Prefixo da Linha (ex: "("):</label>
+            <input type="text" [(ngModel)]="project.output.linePrefix" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 w-full" placeholder="(" />
+          </div>
+          <div>
+            <label class="block font-medium text-slate-300 mb-1">Sufixo da Linha (ex: ")"):</label>
+            <input type="text" [(ngModel)]="project.output.lineSuffix" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 w-full" placeholder=")" />
+          </div>
+        </div>
+
+        <!-- Cabeçalhos Anki -->
+        <label class="flex items-center gap-2 cursor-pointer pt-2">
+          <input type="checkbox" [(ngModel)]="project.output.writeAnkiHeaders" class="rounded text-indigo-600 bg-slate-900 border-slate-700" />
+          <span class="text-slate-300">Incluir cabeçalhos Anki (#separator:tab, #html:true)</span>
+        </label>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-700">
+        <button (click)="isOutputModalOpen = false" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg text-xs">
+          Salvar Configuração
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE VISUALIZAÇÃO E CONTROLE DE SNAPSHOT -->
+  <div *ngIf="previewSnapshotState" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="relative bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden max-w-2xl w-full shadow-2xl flex flex-col">
+
+      <!-- Cabeçalho do Modal -->
+      <div class="px-5 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-800/80">
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-sm text-slate-100">Snapshot da Cena</span>
+          <span class="text-xs px-2 py-0.5 rounded bg-slate-700 text-indigo-300 font-mono">
+            {{ parser.msToFileNameTime(previewSnapshotState.cell.startMs) }}
+          </span>
+        </div>
+        <button (click)="closeSnapshotModal()" class="text-slate-400 hover:text-white p-1 rounded-lg">✕</button>
+      </div>
+
+      <!-- Conteúdo: Imagem ou Estado de Erro -->
+      <div class="p-6 flex flex-col items-center justify-center min-h-[260px] bg-slate-950">
+        <!-- Caso de Sucesso -->
+        <ng-container *ngIf="!previewSnapshotState.hasError && previewSnapshotState.imageUrl">
+          <img [src]="previewSnapshotState.imageUrl"
+               (error)="previewSnapshotState.hasError = true; previewSnapshotState.errorMessage = 'Não foi possível carregar a imagem renderizada.'"
+               class="w-full h-auto object-contain max-h-[60vh] rounded-lg shadow-md border border-slate-800"
+               alt="Snapshot da cena" />
+        </ng-container>
+
+        <!-- Caso de Erro / Imagem Não Encontrada -->
+        <div *ngIf="previewSnapshotState.hasError" class="flex flex-col items-center text-center p-6 space-y-3">
+          <div class="w-14 h-14 rounded-full bg-red-950/60 border border-red-500/40 flex items-center justify-center text-red-400">
+            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h4 class="text-sm font-semibold text-slate-200">Não foi possível obter a imagem da cena</h4>
+          <p class="text-xs text-slate-400 max-w-sm">
+            {{ previewSnapshotState.errorMessage || 'Ocorreu um erro ao extrair o frame deste ponto do vídeo.' }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Rodapé com Ações: Excluir, Tentar Novamente e Fechar -->
+      <div class="px-5 py-3 border-t border-slate-800 flex items-center justify-between bg-slate-900">
+        <button (click)="deleteSnapshot()"
+                class="px-3.5 py-1.5 bg-red-900/40 hover:bg-red-800/60 border border-red-600/50 text-red-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition">
+          <svg class="w-3.5 h-3.5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          <span>Excluir Snapshot</span>
+        </button>
+
+        <div class="flex items-center gap-2">
+          <button (click)="previewSnapshot(previewSnapshotState.row, previewSnapshotState.track)"
+                  class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition">
+            Tentar Novamente
+          </button>
+          <button (click)="closeSnapshotModal()"
+                  class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg transition shadow-sm">
+            Fechar
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODAL DE DESLOCAMENTO TEMPORAL DE LEGENDA -->
+  <div *ngIf="isShiftModalOpen" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl flex flex-col gap-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>Ajustar Tempo / Deslocar Legenda</span>
+        </h3>
+        <button (click)="closeShiftModal()" class="text-slate-400 hover:text-white">✕</button>
+      </div>
+
+      <div class="space-y-4 text-xs">
+        <!-- Escopo do Deslocamento -->
+        <div>
+          <label class="block font-medium text-slate-300 mb-1.5">Aplicar Deslocamento em:</label>
+          <div class="space-y-2 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" [(ngModel)]="shiftModalScope" value="from_row" class="text-indigo-600 bg-slate-900 border-slate-700" />
+              <span class="text-slate-200 font-medium">A partir da linha #{{ shiftModalRowIndex + 1 }} até o final</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" [(ngModel)]="shiftModalScope" value="all" class="text-indigo-600 bg-slate-900 border-slate-700" />
+              <span class="text-slate-200 font-medium">Em toda a faixa (todas as linhas)</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Valor em ms -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="font-medium text-slate-300">Deslocamento Temporal (ms):</label>
+            <span class="font-mono font-bold"
+                  [ngClass]="shiftModalDeltaMs > 0 ? 'text-emerald-400' : (shiftModalDeltaMs < 0 ? 'text-amber-400' : 'text-slate-400')">
+              {{ shiftModalDeltaMs > 0 ? '+' : '' }}{{ shiftModalDeltaMs }} ms ({{ (shiftModalDeltaMs / 1000).toFixed(3) }}s)
+            </span>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <input type="number" [(ngModel)]="shiftModalDeltaMs" step="100"
+                   class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 font-mono text-center text-sm focus:outline-none focus:border-indigo-500" />
+            <button (click)="shiftModalDeltaMs = 0"
+                    class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg border border-slate-700">
+              Zerar
+            </button>
+          </div>
+        </div>
+
+        <!-- Atalhos rápidos de ms -->
+        <div>
+          <span class="block text-[11px] text-slate-400 mb-1.5">Adicionar / Subtrair Rápido:</span>
+          <div class="grid grid-cols-4 gap-1.5 text-center">
+            <button (click)="addShiftDelta(-1000)" class="py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700/60 font-mono text-[11px]">-1.0s</button>
+            <button (click)="addShiftDelta(-500)" class="py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700/60 font-mono text-[11px]">-0.5s</button>
+            <button (click)="addShiftDelta(-250)" class="py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700/60 font-mono text-[11px]">-0.25s</button>
+            <button (click)="addShiftDelta(-100)" class="py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700/60 font-mono text-[11px]">-0.1s</button>
+            <button (click)="addShiftDelta(100)" class="py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700/60 font-mono text-[11px]">+0.1s</button>
+            <button (click)="addShiftDelta(250)" class="py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700/60 font-mono text-[11px]">+0.25s</button>
+            <button (click)="addShiftDelta(500)" class="py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700/60 font-mono text-[11px]">+0.5s</button>
+            <button (click)="addShiftDelta(1000)" class="py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700/60 font-mono text-[11px]">+1.0s</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+        <button (click)="closeShiftModal()"
+                class="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-lg text-xs">
+          Cancelar
+        </button>
+        <button (click)="applyTimeShiftModal()" [disabled]="shiftModalDeltaMs === 0"
+                class="px-5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs disabled:opacity-40 transition shadow-md shadow-indigo-600/20">
+          Aplicar Deslocamento
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOTIFICAÇÃO TOAST FLUTUANTE -->
+  <div *ngIf="notification"
+       class="fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-xl border text-xs font-medium flex items-center gap-3 transition-all transform duration-200"
+       [class.bg-emerald-950]="notification.type === 'success'"
+       [class.border-emerald-600]="notification.type === 'success'"
+       [class.text-emerald-200]="notification.type === 'success'"
+       [class.bg-red-950]="notification.type === 'error'"
+       [class.border-red-600]="notification.type === 'error'"
+       [class.text-red-200]="notification.type === 'error'"
+       [class.bg-slate-800]="notification.type === 'info'"
+       [class.border-slate-600]="notification.type === 'info'"
+       [class.text-slate-200]="notification.type === 'info'">
+    <span>{{ notification.message }}</span>
+  </div>
+
+</div>
+
