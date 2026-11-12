@@ -1,3 +1,4 @@
 @echo off
 echo Iniciando Anki Audio Card Creator em modo de Desenvolvimento...
-yarn electron:dev
+call yarn electron:dev
+exit /b %ERRORLEVEL%

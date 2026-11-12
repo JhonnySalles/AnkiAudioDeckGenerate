@@ -394,16 +394,40 @@
           <label class="block font-medium text-slate-300 mb-1">Pasta Destino das Mídias (.mp3 / .jpg):</label>
           <div class="flex items-center gap-2">
             <input type="text" [(ngModel)]="exportOptions.mediaOutputDir"
-                   placeholder="Ex: C:/Decks/MeuDeck_midia (definida automaticamente ao escolher o arquivo .txt)"
+                   placeholder="Ex: C:/Decks/MeuDeck_midia"
                    class="flex-1 bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200 focus:outline-none" />
             <button (click)="browseMediaOutputDir()"
                     class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded font-medium">
               Procurar...
             </button>
           </div>
-          <p class="text-[10px] text-slate-400 mt-1">
-            Preenchida automaticamente como <code class="text-indigo-400 font-mono">&#123;nome_do_txt&#125;_midia</code> no mesmo diretório do arquivo .txt.
-          </p>
+        </div>
+
+        <!-- Seleção de Colunas a serem Gravadas no .txt -->
+        <div class="p-3 bg-slate-950/60 border border-slate-800 rounded-xl space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="block font-bold text-slate-300 text-[11px] uppercase tracking-wider">
+              Colunas a Gravar no Arquivo (.txt):
+            </span>
+            <div class="flex items-center gap-2">
+              <button (click)="selectAllExportColumns(true)" type="button"
+                      class="text-[10px] text-indigo-400 hover:text-indigo-300 underline font-medium">
+                Marcar Todas
+              </button>
+              <span class="text-slate-600 text-[10px]">|</span>
+              <button (click)="selectAllExportColumns(false)" type="button"
+                      class="text-[10px] text-slate-400 hover:text-slate-300 underline font-medium">
+                Desmarcar Todas
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 max-h-40 overflow-y-auto">
+            <label *ngFor="let col of availableExportColumns" class="flex items-center gap-2 cursor-pointer p-1.5 rounded hover:bg-slate-900 border border-transparent hover:border-slate-800 transition">
+              <input type="checkbox" [(ngModel)]="col.selected" class="rounded text-indigo-600 bg-slate-900 border-slate-700" />
+              <span class="text-xs text-slate-200 truncate" [title]="col.label">{{ col.label }}</span>
+            </label>
+          </div>
         </div>
 
         <!-- Opções de Geração de Mídia -->

@@ -12,8 +12,10 @@
     "compile:electron": "tsc -p tsconfig.electron.json",
     "compile:all": "yarn compile:electron && yarn build",
     "electron:dev": "node scripts/dev.js",
-    "pack:light": "electron-builder --config electron-builder.json --publish never",
-    "build:electron": "yarn compile:all && yarn pack:light"
+    "pack:installer": "electron-builder --config electron-builder.json --publish never",
+    "build:electron": "yarn compile:all && yarn pack:installer",
+    "build:electron:release": "yarn compile:all && yarn pack:installer",
+    "release:win": "scripts\\build-release.bat"
   },
   "private": true,
   "dependencies": {

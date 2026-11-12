@@ -68,10 +68,13 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     mediaOutputDir: '',
     generateAudio: true,
     generateImages: true,
-    copyToAnkiCollectionMedia: true,
+    copyToAnkiCollectionMedia: false,
     trimSilence: true,
     normalizeAudio: true
   };
+
+  // Seleção de colunas para exportação no arquivo .txt
+  public availableExportColumns: { key: string; label: string; selected: boolean }[] = [];
 
   // Modal de Shift Temporal
   public isShiftModalOpen = false;
@@ -758,11 +761,64 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
   }
 
   // ================= EXPORTAR PARA ANKI =================
+  public initExportColumns(): void {
+    const existingMap = new Map<string, boolean>();
+    for (const c of this.availableExportColumns) {
+      existingMap.set(c.key, c.selected);
+    }
+
+    const cols: { key: string; label: string; selected: boolean }[] = [
+      { key: 'id', label: 'ID do Card (id)', selected: existingMap.has('id') ? existingMap.get('id')! : true },
+      { key: 'seq', label: 'Sequência Numérica (seq)', selected: existingMap.has('seq') ? existingMap.get('seq')! : true },
+      { key: 'time', label: 'Tempo Inicial (time)', selected: existingMap.has('time') ? existingMap.get('time')! : true }
+    ];
+
+    for (const track of this.project.tracks) {
+      const label = track.label || 'Faixa';
+      const soundKey = `sound_${track.id}`;
+      const imageKey = `image_${track.id}`;
+      const textKey = `text_${track.id}`;
+
+      cols.push({
+        key: soundKey,
+        label: `Áudio (${label})`,
+        selected: existingMap.has(soundKey) ? existingMap.get(soundKey)! : true
+      });
+      cols.push({
+        key: imageKey,
+        label: `Imagem (${label})`,
+        selected: existingMap.has(imageKey) ? existingMap.get(imageKey)! : true
+      });
+      cols.push({
+        key: textKey,
+        label: `Texto (${label})`,
+        selected: existingMap.has(textKey) ? existingMap.get(textKey)! : true
+      });
+    }
+
+    if (this.project.output?.tags && this.project.output.tags.length > 0) {
+      cols.push({
+        key: 'tags',
+        label: 'Tags',
+        selected: existingMap.has('tags') ? existingMap.get('tags')! : true
+      });
+    }
+
+    this.availableExportColumns = cols;
+  }
+
+  public selectAllExportColumns(enable: boolean): void {
+    for (const c of this.availableExportColumns) {
+      c.selected = enable;
+    }
+  }
+
   public openExportModal(): void {
     if (!this.project.rows || this.project.rows.length === 0) {
       this.showToast('Não há linhas na grid para exportar.', 'error');
       return;
     }
+    this.initExportColumns();
     this.lastExportResult = null;
     this.isExportModalOpen = true;
   }
@@ -799,6 +855,15 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       return;
     }
 
+    const selectedColumns = this.availableExportColumns
+      .filter(c => c.selected)
+      .map(c => c.key);
+
+    if (selectedColumns.length === 0) {
+      this.showToast('Selecione pelo menos uma coluna para gerar o arquivo .txt.', 'error');
+      return;
+    }
+
     this.isExporting = true;
     this.exportProgress = {
       current: 0,
@@ -808,31 +873,11 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     };
 
     try {
-      // Ajustar colunas dinâmicas para o formato de exportação
-      const mappedColumns: string[] = [];
-      for (const c of this.project.output.columns) {
-        if (c.startsWith('sound_')) {
-          const idx = parseInt(c.replace('sound_', ''), 10) - 1;
-          const t = this.project.tracks[idx];
-          if (t) mappedColumns.push(`sound_${t.id}`);
-        } else if (c.startsWith('image_')) {
-          const idx = parseInt(c.replace('image_', ''), 10) - 1;
-          const t = this.project.tracks[idx];
-          if (t) mappedColumns.push(`image_${t.id}`);
-        } else if (c.startsWith('text_')) {
-          const idx = parseInt(c.replace('text_', ''), 10) - 1;
-          const t = this.project.tracks[idx];
-          if (t) mappedColumns.push(`text_${t.id}`);
-        } else {
-          mappedColumns.push(c);
-        }
-      }
-
       const projectToExport: SubtitleProject = {
         ...this.project,
         output: {
           ...this.project.output,
-          columns: mappedColumns
+          columns: selectedColumns
         }
       };
 

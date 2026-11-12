@@ -79,6 +79,9 @@ export class SubtitleExportService {
     const total = validRows.length;
     const errors: string[] = [];
 
+    // Padding com zeros à esquerda: mínimo de 4 dígitos, ou mais se total passar de 9999
+    const padLength = Math.max(4, String(total).length);
+
     const lines: string[] = [];
     const mediaSourceMap = new Map<string, string>();
     const mediaSources = Array.isArray(project?.mediaSources) ? project.mediaSources : [];
@@ -93,18 +96,59 @@ export class SubtitleExportService {
       lines.push('#html:true');
     }
 
+    // Configuração de colunas de saída
+    const outputConfig = project.output || {
+      separator: '\t',
+      quoteMode: 'when-needed',
+      linePrefix: '',
+      lineSuffix: '',
+      writeAnkiHeaders: true,
+      columns: ['id', 'seq', 'sound_1', 'image_1', 'text_1'],
+      tags: []
+    };
+    const separator = outputConfig.separator || '\t';
+
+    // Helper para resolver id de faixa a partir da chave de coluna (suporta 'sound_trk123' ou 'sound_1')
+    const resolveTrackId = (keySuffix: string): string => {
+      const directMatch = tracks.find(t => t.id === keySuffix);
+      if (directMatch) return directMatch.id;
+      const idx = parseInt(keySuffix, 10) - 1;
+      if (!isNaN(idx) && tracks[idx]) return tracks[idx].id;
+      return keySuffix;
+    };
+
+    // Estrutura para enfileirar as tarefas de mídia a serem processadas pelo FFmpeg
+    interface RowMediaTask {
+      mediaFilePath: string;
+      streamIdx: number;
+      effectiveStart: number;
+      effectiveEnd: number;
+      midTime: number;
+      audioBaseName: string;
+      imageBaseName: string;
+      hasRealVideo: boolean;
+      shouldCutAudio: boolean;
+      shouldExtractImage: boolean;
+    }
+
+    const rowsMediaTasks: RowMediaTask[][] = [];
+
+    // =========================================================================
+    // ETAPA 1: GERAR TODAS AS LINHAS E GRAVAR O ARQUIVO .TXT PRIMEIRO
+    // =========================================================================
     for (let i = 0; i < validRows.length; i++) {
       const row = validRows[i];
       const seq = i + 1;
+      const seqStr = String(seq).padStart(padLength, '0');
 
-      // 1. Determinar tempo do ID com base em timingTrackId
+      // Determinar tempo do ID com base em timingTrackId
       const cellsObj = row.cells || {};
       const timingCell = cellsObj[project.timingTrackId] || Object.values(cellsObj).find(c => c !== null);
       const idTimeStr = timingCell ? this.msToIdTime(timingCell.startMs) : '00:00:00';
       const cardId = `${safeMediaName} - ${idTimeStr}`;
 
-      // Gerar áudios e imagens para cada faixa presente
       const trackData: Record<string, { soundTag: string; imageTag: string; text: string; start: string; end: string }> = {};
+      const currentTasks: RowMediaTask[] = [];
 
       for (const track of tracks) {
         const cell = cellsObj[track.id];
@@ -126,49 +170,9 @@ export class SubtitleExportService {
         const midTime = Math.round((effectiveStart + effectiveEnd) / 2);
         const midFileTime = this.msToFileNameTime(midTime);
 
-        const audioBaseName = `${safeMediaName}_${track.label}_${seq}_${startFileTime}-${endFileTime}.mp3`;
-        const imageBaseName = `${safeMediaName}_${track.label}_${seq}_${midFileTime}.jpg`;
-
-        // 1. Gerar áudio se habilitado
-        if (generateAudio && mediaFilePath && fs.existsSync(mediaFilePath)) {
-          const tempAudioPath = path.join(ffmpeg.getCacheDir(), audioBaseName);
-          try {
-            await ffmpeg.cutAudio({
-              sourcePath: mediaFilePath,
-              audioStreamIndex: streamIdx,
-              startMs: effectiveStart,
-              endMs: effectiveEnd,
-              outputPath: tempAudioPath,
-              trimSilence: options?.trimSilence !== false,
-              normalizeAudio: options?.normalizeAudio !== false
-            });
-
-            if (mediaDir && fs.existsSync(mediaDir)) {
-              fs.copyFileSync(tempAudioPath, path.join(mediaDir, audioBaseName));
-            }
-          } catch (err: any) {
-            errors.push(`Áudio ${audioBaseName}: ${err.message}`);
-          }
-        }
-
-        // 2. Gerar snapshot apenas se a fonte tiver vídeo real e geração de imagem estiver habilitada
-        if (generateImages && hasRealVideo && mediaFilePath && fs.existsSync(mediaFilePath)) {
-          const tempImagePath = path.join(ffmpeg.getCacheDir(), imageBaseName);
-          try {
-            await ffmpeg.extractSnapshot({
-              sourcePath: mediaFilePath,
-              atMs: midTime,
-              outputPath: tempImagePath,
-              width: 480
-            });
-
-            if (mediaDir && fs.existsSync(mediaDir)) {
-              fs.copyFileSync(tempImagePath, path.join(mediaDir, imageBaseName));
-            }
-          } catch (err: any) {
-            errors.push(`Imagem ${imageBaseName}: ${err.message}`);
-          }
-        }
+        // Nomes com sequência padded (0001, 0002...)
+        const audioBaseName = `${safeMediaName}_${track.label}_${seqStr}_${startFileTime}-${endFileTime}.mp3`;
+        const imageBaseName = `${safeMediaName}_${track.label}_${seqStr}_${midFileTime}.jpg`;
 
         const cleanText = cell.text.replace(/\r?\n/g, '<br>').trim();
         trackData[track.id] = {
@@ -178,41 +182,48 @@ export class SubtitleExportService {
           start: this.msToIdTime(cell.startMs),
           end: this.msToIdTime(cell.endMs)
         };
+
+        if (mediaFilePath && fs.existsSync(mediaFilePath)) {
+          currentTasks.push({
+            mediaFilePath,
+            streamIdx,
+            effectiveStart,
+            effectiveEnd,
+            midTime,
+            audioBaseName,
+            imageBaseName,
+            hasRealVideo,
+            shouldCutAudio: generateAudio,
+            shouldExtractImage: generateImages && hasRealVideo
+          });
+        }
       }
 
-      // Montar colunas conforme output.columns
-      const outputConfig = project.output || {
-        separator: '\t',
-        quoteMode: 'when-needed',
-        linePrefix: '',
-        lineSuffix: '',
-        writeAnkiHeaders: true,
-        columns: ['id', 'seq', 'sound_1', 'image_1', 'text_1'],
-        tags: []
-      };
-      const separator = outputConfig.separator || '\t';
+      rowsMediaTasks.push(currentTasks);
+
+      // Montar colunas conforme outputConfig.columns selecionadas
       const rowValues: string[] = [];
       for (const colKey of (outputConfig.columns || [])) {
         if (colKey === 'id') {
           rowValues.push(cardId);
         } else if (colKey === 'seq') {
-          rowValues.push(seq.toString());
+          rowValues.push(seqStr);
         } else if (colKey === 'time') {
           rowValues.push(idTimeStr);
         } else if (colKey.startsWith('sound_')) {
-          const tId = colKey.replace('sound_', '');
+          const tId = resolveTrackId(colKey.replace('sound_', ''));
           rowValues.push(trackData[tId]?.soundTag || '');
         } else if (colKey.startsWith('image_')) {
-          const tId = colKey.replace('image_', '');
+          const tId = resolveTrackId(colKey.replace('image_', ''));
           rowValues.push(trackData[tId]?.imageTag || '');
         } else if (colKey.startsWith('text_')) {
-          const tId = colKey.replace('text_', '');
+          const tId = resolveTrackId(colKey.replace('text_', ''));
           rowValues.push(trackData[tId]?.text || '');
         } else if (colKey.startsWith('start_')) {
-          const tId = colKey.replace('start_', '');
+          const tId = resolveTrackId(colKey.replace('start_', ''));
           rowValues.push(trackData[tId]?.start || '');
         } else if (colKey.startsWith('end_')) {
-          const tId = colKey.replace('end_', '');
+          const tId = resolveTrackId(colKey.replace('end_', ''));
           rowValues.push(trackData[tId]?.end || '');
         } else if (colKey === 'tags') {
           rowValues.push((outputConfig.tags || []).join(' '));
@@ -235,19 +246,92 @@ export class SubtitleExportService {
       const lineContent = formattedCols.join(separator);
       const fullLine = `${outputConfig.linePrefix || ''}${lineContent}${outputConfig.lineSuffix || ''}`;
       lines.push(fullLine);
+    }
 
+    // Grava o arquivo .txt ANTES de qualquer processamento pesado de mídia
+    fs.writeFileSync(outTxtFile, lines.join('\n'), 'utf-8');
+
+    if (onProgress) {
+      onProgress({
+        current: 0,
+        total,
+        percentage: 0,
+        status: (generateAudio || generateImages)
+          ? `Arquivo de texto (.txt) gravado com sucesso! Iniciando extração de mídia...`
+          : `Exportação concluída com sucesso! (Arquivo .txt gravado)`
+      });
+    }
+
+    // =========================================================================
+    // ETAPA 2: EXTRAÇÃO DE ÁUDIOS E IMAGENS COM O FFMPEG
+    // =========================================================================
+    if (generateAudio || generateImages) {
+      for (let i = 0; i < rowsMediaTasks.length; i++) {
+        const tasks = rowsMediaTasks[i];
+
+        for (const task of tasks) {
+          // 1. Gerar áudio se habilitado
+          if (task.shouldCutAudio) {
+            const tempAudioPath = path.join(ffmpeg.getCacheDir(), task.audioBaseName);
+            try {
+              await ffmpeg.cutAudio({
+                sourcePath: task.mediaFilePath,
+                audioStreamIndex: task.streamIdx,
+                startMs: task.effectiveStart,
+                endMs: task.effectiveEnd,
+                outputPath: tempAudioPath,
+                trimSilence: options?.trimSilence !== false,
+                normalizeAudio: options?.normalizeAudio !== false
+              });
+
+              if (mediaDir && fs.existsSync(mediaDir)) {
+                fs.copyFileSync(tempAudioPath, path.join(mediaDir, task.audioBaseName));
+              }
+            } catch (err: any) {
+              errors.push(`Áudio ${task.audioBaseName}: ${err.message}`);
+            }
+          }
+
+          // 2. Gerar snapshot apenas se a fonte tiver vídeo real e geração de imagem estiver habilitada
+          if (task.shouldExtractImage && task.hasRealVideo) {
+            const tempImagePath = path.join(ffmpeg.getCacheDir(), task.imageBaseName);
+            try {
+              await ffmpeg.extractSnapshot({
+                sourcePath: task.mediaFilePath,
+                atMs: task.midTime,
+                outputPath: tempImagePath,
+                width: 480
+              });
+
+              if (mediaDir && fs.existsSync(mediaDir)) {
+                fs.copyFileSync(tempImagePath, path.join(mediaDir, task.imageBaseName));
+              }
+            } catch (err: any) {
+              errors.push(`Imagem ${task.imageBaseName}: ${err.message}`);
+            }
+          }
+        }
+
+        if (onProgress) {
+          const percentage = Math.round(((i + 1) / total) * 100);
+          onProgress({
+            current: i + 1,
+            total,
+            percentage,
+            status: `Processando mídias ${i + 1} de ${total} (${percentage}%)...`
+          });
+        }
+      }
+    } else {
       if (onProgress) {
-        const percentage = Math.round(((i + 1) / total) * 100);
         onProgress({
-          current: i + 1,
+          current: total,
           total,
-          percentage,
-          status: `Processando item ${i + 1} de ${total} (${percentage}%)...`
+          percentage: 100,
+          status: `Exportação concluída com sucesso! (100%)`
         });
       }
     }
-
-    fs.writeFileSync(outTxtFile, lines.join('\n'), 'utf-8');
 
     return {
       txtPath: outTxtFile,
