@@ -1,8 +1,17 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { CardPayload, AppSettings } from './types/anki';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   ping: () => ipcRenderer.invoke('app:ping'),
+
+  // Utilitários de Arquivo / Drag & Drop
+  getPathForFile: (file: File): string => {
+    try {
+      return webUtils.getPathForFile(file);
+    } catch {
+      return (file as any).path || '';
+    }
+  },
 
   // AnkiConnect & Cards
   checkAnkiConnect: () => ipcRenderer.invoke('anki:check-status'),

@@ -40,7 +40,16 @@ export class SettingsService {
       ankiCollectionMediaDir: defaultMediaDir,
       exportTxtPath: defaultTxtExport,
       ankiConnectUrl: 'http://127.0.0.1:8765',
-      saveMode: 'both'
+      saveMode: 'both',
+      audioBitrate: '128k',
+      audioFormat: 'mp3',
+      normalizeAudio: true,
+      trimSilence: true,
+      imageWidth: 480,
+      imageHeight: 270,
+      videoWidth: 640,
+      videoHeight: 360,
+      videoBitrate: '800k'
     };
   }
 

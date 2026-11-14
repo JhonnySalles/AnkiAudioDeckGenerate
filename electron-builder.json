@@ -6,6 +6,7 @@
     "output": "exec"
   },
   "win": {
+    "icon": "assets/icons/icon.ico",
     "target": [
       {
         "target": "nsis",
@@ -36,6 +37,7 @@
   "files": [
     "dist/anki-card-creator/**/*",
     "dist-electron/**/*",
+    "assets/**/*",
     "package.json"
   ],
   "extraResources": [

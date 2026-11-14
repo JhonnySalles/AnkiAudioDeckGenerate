@@ -5,6 +5,7 @@ import { spawn } from 'child_process';
 import {
   CutAudioOptions,
   ExtractSnapshotOptions,
+  CutVideoOptions,
   MediaProbeResult,
   MediaAudioStream,
   MediaSubtitleStream
@@ -195,7 +196,9 @@ export class FfmpegService {
       endMs,
       outputPath,
       trimSilence = true,
-      normalizeAudio = true
+      normalizeAudio = true,
+      bitrate = '128k',
+      format = 'mp3'
     } = options;
 
     if (!fs.existsSync(sourcePath)) {
@@ -215,6 +218,24 @@ export class FfmpegService {
     const startStr = this.formatSecondsFfmpeg(startMs);
     const durationMs = Math.max(100, endMs - startMs);
     const durationStr = (durationMs / 1000).toFixed(3);
+
+    // Mapear formato para codec
+    const normFormat = format.toLowerCase();
+    let codecArgs: string[] = [];
+    if (normFormat === 'aac' || normFormat === 'm4a') {
+      codecArgs = ['-c:a', 'aac', '-b:a', bitrate];
+    } else if (normFormat === 'ogg') {
+      codecArgs = ['-c:a', 'libvorbis', '-b:a', bitrate];
+    } else if (normFormat === 'opus') {
+      codecArgs = ['-c:a', 'libopus', '-b:a', bitrate];
+    } else if (normFormat === 'flac') {
+      codecArgs = ['-c:a', 'flac'];
+    } else if (normFormat === 'wav') {
+      codecArgs = ['-c:a', 'pcm_s16le'];
+    } else {
+      // Padrão MP3
+      codecArgs = ['-c:a', 'libmp3lame', '-b:a', bitrate];
+    }
 
     // Construtor dos filtros de áudio
     const buildArgs = (includeFilters: boolean) => {
@@ -239,7 +260,7 @@ export class FfmpegService {
           afFilters.push('areverse');
         }
         if (normalizeAudio) {
-          // Normalização EBU R128 para MP3 padronizado
+          // Normalização EBU R128 para áudio padronizado
           afFilters.push('loudnorm=I=-16:TP=-1.5:LRA=11');
         }
         if (afFilters.length > 0) {
@@ -247,11 +268,7 @@ export class FfmpegService {
         }
       }
 
-      args.push(
-        '-c:a', 'libmp3lame',
-        '-q:a', '4',
-        resolvedOut
-      );
+      args.push(...codecArgs, resolvedOut);
       return args;
     };
 
@@ -292,7 +309,7 @@ export class FfmpegService {
   }
 
   public async extractSnapshot(options: ExtractSnapshotOptions): Promise<string> {
-    const { sourcePath, atMs, outputPath, width = 480 } = options;
+    const { sourcePath, atMs, outputPath, width = 480, height } = options;
 
     if (!fs.existsSync(sourcePath)) {
       throw new Error(`Arquivo fonte de vídeo não encontrado: ${sourcePath}`);
@@ -309,6 +326,11 @@ export class FfmpegService {
 
     const timeStr = this.formatSecondsFfmpeg(atMs);
 
+    // Preserva sempre a proporção original do vídeo sem distorções
+    const vfScale = height && height > 0
+      ? `scale=${width}:${height}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`
+      : `scale=${width}:-2`;
+
     return new Promise((resolve, reject) => {
       // Adicionamos -pix_fmt yuvj420p para compatibilidade perfeita com vídeos 10-bit (HEVC 10-bit)
       const args = [
@@ -316,7 +338,7 @@ export class FfmpegService {
         '-ss', timeStr,
         '-i', sourcePath,
         '-frames:v', '1',
-        '-vf', `scale=${width}:-2`,
+        '-vf', vfScale,
         '-pix_fmt', 'yuvj420p',
         '-q:v', '3',
         resolvedOut
@@ -339,6 +361,81 @@ export class FfmpegService {
 
       proc.on('error', (err) => {
         reject(new Error(`Erro ao executar ffmpeg snapshot: ${err.message}`));
+      });
+    });
+  }
+
+  /**
+   * Recorta clipe de vídeo mantendo a proporção original
+   */
+  public async cutVideo(options: CutVideoOptions): Promise<string> {
+    const {
+      sourcePath,
+      audioStreamIndex = 0,
+      startMs,
+      endMs,
+      outputPath,
+      width = 640,
+      height = 360,
+      bitrate = '800k'
+    } = options;
+
+    if (!fs.existsSync(sourcePath)) {
+      throw new Error(`Arquivo fonte de vídeo não encontrado: ${sourcePath}`);
+    }
+
+    const resolvedOut = path.isAbsolute(outputPath)
+      ? outputPath
+      : path.join(this.cacheDir, outputPath);
+
+    const outDir = path.dirname(resolvedOut);
+    if (!fs.existsSync(outDir)) {
+      fs.mkdirSync(outDir, { recursive: true });
+    }
+
+    const timeStr = this.formatSecondsFfmpeg(startMs);
+    const durationMs = Math.max(100, endMs - startMs);
+    const durationStr = (durationMs / 1000).toFixed(3);
+
+    const vfScale = height && height > 0
+      ? `scale=${width}:${height}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`
+      : `scale=${width}:-2`;
+
+    return new Promise((resolve, reject) => {
+      const args = [
+        '-y',
+        '-ss', timeStr,
+        '-t', durationStr,
+        '-i', sourcePath,
+        '-map', '0:v:0',
+        '-map', `0:a:${audioStreamIndex}`,
+        '-vf', vfScale,
+        '-c:v', 'libx264',
+        '-b:v', bitrate,
+        '-preset', 'veryfast',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-pix_fmt', 'yuv420p',
+        resolvedOut
+      ];
+
+      const proc = spawn(this.ffmpegPath, args);
+      let stderr = '';
+
+      proc.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0 && fs.existsSync(resolvedOut)) {
+          resolve(resolvedOut);
+        } else {
+          reject(new Error(`Falha no corte de vídeo (code ${code}): ${stderr.slice(-300)}`));
+        }
+      });
+
+      proc.on('error', (err) => {
+        reject(new Error(`Erro ao executar ffmpeg video: ${err.message}`));
       });
     });
   }

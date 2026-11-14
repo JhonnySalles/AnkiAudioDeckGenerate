@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, protocol, net, Menu, MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, protocol, net, Menu, MenuItemConstructorOptions, Tray } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { AnkiConnectService } from './services/anki-connect.service';
@@ -22,6 +22,31 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
+
+function getAppIconPath(): string {
+  const candidateIco = path.join(app.getAppPath(), 'assets', 'icons', 'icon.ico');
+  if (fs.existsSync(candidateIco)) return candidateIco;
+
+  const candidatePng = path.join(app.getAppPath(), 'assets', 'icons', 'icon.png');
+  if (fs.existsSync(candidatePng)) return candidatePng;
+
+  const fallbackIco = path.join(__dirname, '..', 'assets', 'icons', 'icon.ico');
+  if (fs.existsSync(fallbackIco)) return fallbackIco;
+
+  return path.join(__dirname, '..', 'assets', 'icons', 'icon.png');
+}
+
+function getTrayIconPath(): string {
+  const candidateIco = path.join(app.getAppPath(), 'assets', 'icons', 'tray.ico');
+  if (fs.existsSync(candidateIco)) return candidateIco;
+
+  const candidatePng = path.join(app.getAppPath(), 'assets', 'icons', 'tray.png');
+  if (fs.existsSync(candidatePng)) return candidatePng;
+
+  return getAppIconPath();
+}
 
 // Sistema de captura e retransmissão de logs do processo principal para o Renderer
 function broadcastMainLog(level: 'info' | 'warn' | 'error', message: string, details?: any): void {
@@ -168,13 +193,82 @@ function createApplicationMenu(): void {
   Menu.setApplicationMenu(menu);
 }
 
+function createTray(): void {
+  if (tray) return;
+
+  const trayIcon = getTrayIconPath();
+  if (!fs.existsSync(trayIcon)) {
+    console.warn('[tray] Ícone da bandeja não encontrado:', trayIcon);
+    return;
+  }
+
+  tray = new Tray(trayIcon);
+  tray.setToolTip('Anki Audio Card Creator');
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Abrir Anki Audio Card Creator',
+      click: () => {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    },
+    {
+      label: 'Novo Projeto',
+      click: () => mainWindow?.webContents.send('menu:action', 'new-project')
+    },
+    { type: 'separator' },
+    {
+      label: 'Minimizar para a Bandeja',
+      click: () => mainWindow?.hide()
+    },
+    { type: 'separator' },
+    {
+      label: 'Sair',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]);
+
+  tray.setContextMenu(contextMenu);
+
+  tray.on('click', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isVisible()) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+        mainWindow.focus();
+      } else {
+        mainWindow.focus();
+      }
+    } else {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  tray.on('double-click', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+}
+
 function createWindow(): void {
+  const iconPath = getAppIconPath();
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 750,
     minWidth: 850,
     minHeight: 600,
     title: 'Anki Audio Card Creator',
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     backgroundColor: '#0f172a',
     autoHideMenuBar: false,
     webPreferences: {
@@ -436,7 +530,8 @@ function registerIpcHandlers(): void {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       title: 'Selecionar Arquivos de Legenda',
       filters: [
-        { name: 'Todos os Formatos de Legenda (*.srt, *.ass, *.vtt, *.sub, ...)', extensions: SUPPORTED_SUBTITLE_EXTENSIONS },
+        { name: 'Todos os Formatos de Legenda (*.srt, *.ass, *.vtt, *.sub, *.csv, ...)', extensions: SUPPORTED_SUBTITLE_EXTENSIONS },
+        { name: 'Exportação Anki / Planilha (*.csv, *.txt)', extensions: ['csv', 'txt'] },
         { name: 'SubRip (*.srt)', extensions: ['srt'] },
         { name: 'Advanced SubStation (*.ass, *.ssa)', extensions: ['ass', 'ssa'] },
         { name: 'WebVTT (*.vtt)', extensions: ['vtt'] },
@@ -594,8 +689,17 @@ app.whenReady().then(() => {
         if (ext === '.mp3') mimeType = 'audio/mpeg';
         else if (ext === '.wav') mimeType = 'audio/wav';
         else if (ext === '.ogg') mimeType = 'audio/ogg';
+        else if (ext === '.opus') mimeType = 'audio/opus';
+        else if (ext === '.aac') mimeType = 'audio/aac';
+        else if (ext === '.flac') mimeType = 'audio/flac';
+        else if (ext === '.m4a') mimeType = 'audio/mp4';
+        else if (ext === '.mp4') mimeType = 'video/mp4';
+        else if (ext === '.webm') mimeType = 'video/webm';
         else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
         else if (ext === '.png') mimeType = 'image/png';
+        else if (ext === '.webp') mimeType = 'image/webp';
+        else if (ext === '.gif') mimeType = 'image/gif';
+        else if (ext === '.bmp') mimeType = 'image/bmp';
 
         const stat = fs.statSync(targetFilePath);
         const fileSize = stat.size;
@@ -651,12 +755,25 @@ app.whenReady().then(() => {
   registerIpcHandlers();
   createApplicationMenu();
   createWindow();
+  createTray();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
+});
+
+app.on('before-quit', () => {
+  isQuitting = true;
+  if (tray) {
+    try {
+      tray.destroy();
+    } catch {
+      // ignore
+    }
+    tray = null;
+  }
 });
 
 app.on('window-all-closed', () => {

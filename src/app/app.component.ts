@@ -129,7 +129,16 @@ export class AppComponent implements OnInit, OnDestroy {
     ankiCollectionMediaDir: '',
     exportTxtPath: '',
     ankiConnectUrl: 'http://127.0.0.1:8765',
-    saveMode: 'both'
+    saveMode: 'both',
+    audioBitrate: '128k',
+    audioFormat: 'mp3',
+    normalizeAudio: true,
+    trimSilence: true,
+    imageWidth: 480,
+    imageHeight: 270,
+    videoWidth: 640,
+    videoHeight: 360,
+    videoBitrate: '800k'
   };
 
   // UI State
@@ -167,6 +176,10 @@ export class AppComponent implements OnInit, OnDestroy {
     const unsubAction = this.electronService.onMenuTriggerAction((action: string) => {
       if (action === 'open-logs') {
         this.isLogConsoleOpen = true;
+      } else if (action === 'new-project' && this.currentMode === 'music') {
+        this.cards = [];
+        this.clearModalAudio();
+        this.showToast('Novo projeto de música iniciado.', 'info');
       }
     });
     this.unsubs.push(unsubAction);
@@ -453,7 +466,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
     if (event.dataTransfer && event.dataTransfer.files.length > 0) {
       const file = event.dataTransfer.files[0];
-      const filePath = (file as any).path || '';
+      const filePath = this.electronService.getPathForFile(file) || (file as any).path || '';
       if (filePath) {
         this.setModalAudioFile(filePath, file.name, file);
       } else {

@@ -1,6 +1,26 @@
-<div class="h-full flex flex-col bg-slate-900 text-slate-100 overflow-hidden font-sans"
+<div class="h-full flex flex-col bg-slate-900 text-slate-100 overflow-hidden font-sans relative"
+     (dragenter)="onDragEnter($event)"
      (dragover)="onDragOver($event)"
+     (dragleave)="onDragLeave($event)"
      (drop)="onFileDrop($event)">
+
+  <!-- OVERLAY DE ARRASTE (DRAG & DROP UNIVERSAL) -->
+  <div *ngIf="isDraggingOver"
+       (dragenter)="onDragEnter($event)"
+       (dragover)="onDragOver($event)"
+       (dragleave)="onDragLeave($event)"
+       (drop)="onFileDrop($event)"
+       class="absolute inset-0 z-50 bg-indigo-950/85 backdrop-blur-md border-4 border-dashed border-indigo-400 flex flex-col items-center justify-center transition-all animate-in fade-in duration-150">
+    <div class="w-20 h-20 rounded-2xl bg-indigo-600/30 border border-indigo-400/40 flex items-center justify-center text-indigo-300 mb-4 shadow-xl pointer-events-none">
+      <svg class="w-10 h-10 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+      </svg>
+    </div>
+    <h3 class="text-xl font-bold text-white mb-2 pointer-events-none">Solte seus arquivos aqui</h3>
+    <p class="text-sm text-indigo-200 max-w-md text-center pointer-events-none">
+      Suporta projetos <strong>.json</strong>, legendas <strong>.srt, .ass, .vtt</strong>, exportações Anki <strong>.csv, .txt</strong>, vídeos, áudios e imagens.
+    </p>
+  </div>
 
   <!-- BARRA DE CABEÇALHO DO PROJETO DE LEGENDAS -->
   <header class="bg-slate-800 border-b border-slate-700/80 px-4 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
@@ -77,10 +97,21 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
-        <span>Formato TXT</span>
+        <span>Formato</span>
       </button>
 
       <div class="h-6 w-px bg-slate-700 mx-1"></div>
+
+      <!-- BOTÃO LIMPAR -->
+      <button (click)="resetProject()"
+              [disabled]="project.tracks.length === 0 && project.mediaSources.length === 0 && project.rows.length === 0"
+              class="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs rounded-lg shadow-sm flex items-center gap-1.5 transition disabled:opacity-40"
+              title="Limpar todas as colunas, mídias e arquivos importados">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+        <span>Limpar</span>
+      </button>
 
       <!-- BOTÕES SALVAR / ABRIR -->
       <button (click)="saveProject()"
@@ -129,6 +160,25 @@
       <select [(ngModel)]="project.sequenceTrackId" class="bg-slate-900 border border-slate-700 text-slate-200 px-2 py-1 rounded focus:outline-none">
         <option *ngFor="let t of project.tracks" [value]="t.id">{{ t.label }}</option>
       </select>
+    </div>
+
+    <!-- OPÇÕES DE ALINHAMENTO ESTILO SUBS2SRS -->
+    <div class="flex items-center gap-2.5 bg-slate-900/80 px-2.5 py-1 rounded border border-slate-700">
+      <label class="flex items-center gap-1.5 cursor-pointer text-slate-300 hover:text-white"
+             title="Agrupar falas consecutivas da base que correspondem à mesma frase na legenda traduzida (padrão subs2srs)">
+        <input type="checkbox" [(ngModel)]="project.groupByCounterpart" (change)="autoAlign()"
+               class="rounded text-indigo-600 bg-slate-800 border-slate-600 w-3.5 h-3.5 focus:ring-0" />
+        <span class="text-[11px] font-medium">Agrupar Tradução (subs2srs)</span>
+      </label>
+
+      <span class="text-slate-600">•</span>
+
+      <label class="flex items-center gap-1.5 cursor-pointer text-slate-300 hover:text-white"
+             title="Marcar como excluídas as falas da base que não possuem tradução correspondente">
+        <input type="checkbox" [(ngModel)]="project.excludeNoCounterpart" (change)="autoAlign()"
+               class="rounded text-indigo-600 bg-slate-800 border-slate-600 w-3.5 h-3.5 focus:ring-0" />
+        <span class="text-[11px] font-medium">Excluir Sem Par</span>
+      </label>
     </div>
 
     <!-- LISTA DE FAIXAS COM CONTROLE DE OFFSET -->
@@ -215,6 +265,7 @@
     <!-- LISTA ROLÁVEL COM VIRTUAL SCROLL -->
     <cdk-virtual-scroll-viewport itemSize="110" class="flex-1 w-full h-full">
       <div *cdkVirtualFor="let row of project.rows; let rIdx = index"
+           (drop)="onRowFileDrop($event, row)"
            class="grid border-b border-slate-800/80 px-3 py-2 items-center hover:bg-slate-900/50 transition duration-75"
            [class.opacity-40]="row.excluded"
            [style.gridTemplateColumns]="'60px 180px repeat(' + project.tracks.length + ', minmax(280px, 1fr)) 40px'">
@@ -237,12 +288,22 @@
         <!-- CÉLULAS DE CADA FAIXA DE LEGENDA -->
         <div *ngFor="let track of project.tracks; let tIdx = index" class="pr-2 min-w-0">
           <div *ngIf="row.cells[track.id] as cell; else emptyCell"
-               class="bg-slate-900/90 border border-slate-700/80 rounded-lg p-2 text-xs flex flex-col justify-between h-[96px] shadow-sm">
+               [attr.draggable]="tIdx >= 1 ? 'true' : null"
+               (dragstart)="onCellDragStart($event, track.id, tIdx, rIdx)"
+               (dragover)="onCellDragOver($event, track.id, tIdx, rIdx)"
+               (drop)="onCellDrop($event, track.id, tIdx, rIdx)"
+               (dragend)="onCellDragEnd()"
+               [class.opacity-50]="draggingCardState?.trackId === track.id && draggingCardState?.rowIndex === rIdx"
+               [class.ring-2]="dragOverTarget?.trackId === track.id && dragOverTarget?.rowIndex === rIdx"
+               [class.ring-indigo-400]="dragOverTarget?.trackId === track.id && dragOverTarget?.rowIndex === rIdx"
+               [class.bg-indigo-950]="dragOverTarget?.trackId === track.id && dragOverTarget?.rowIndex === rIdx"
+               class="bg-slate-900/90 border border-slate-700/80 rounded-lg p-2 text-xs flex flex-col justify-between h-[96px] shadow-sm transition-all duration-75">
 
             <!-- TOPO DA CÉLULA: TEMPOS E CONTROLES DE RECORTE -->
             <div class="flex items-center justify-between text-[10px] text-slate-400 pb-1 border-b border-slate-800">
               <!-- Tempo Inicial e Final com Nudge -->
               <div class="flex items-center gap-1 font-mono">
+                <span *ngIf="tIdx >= 1" class="cursor-grab active:cursor-grabbing text-slate-500 hover:text-slate-300 font-bold select-none pr-1 text-xs" title="Arrastar card para cima ou baixo (move os restantes abaixo)">⋮⋮</span>
                 <span class="text-slate-200 font-semibold">{{ parser.msToFileNameTime(cell.startMs) }}</span>
                 <span class="text-slate-500">→</span>
                 <span class="text-slate-200 font-semibold">{{ parser.msToFileNameTime(cell.endMs) }}</span>
@@ -252,30 +313,33 @@
               <div class="flex items-center gap-1">
                 <!-- Play Audio -->
                 <button (click)="playCellAudio(row, track)"
-                        title="Ouvir recorte desta legenda"
-                        class="p-1 rounded bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white transition">
-                  <svg *ngIf="!(playingRowId === row.id && playingAudioTrackId === track.id)" class="w-3.5 h-3.5 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                        [title]="cell.customAudioPath ? 'Ouvir áudio personalizado: ' + cell.audioFileName : 'Ouvir recorte desta legenda'"
+                        class="p-1 rounded bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white transition relative">
+                  <svg *ngIf="!(playingRowId === row.id && playingAudioTrackId === track.id)" class="w-3.5 h-3.5" [ngClass]="(cell.customAudioPath || cell.audioFileName) ? 'text-emerald-300' : 'text-emerald-400'" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/>
                   </svg>
                   <svg *ngIf="playingRowId === row.id && playingAudioTrackId === track.id" class="w-3.5 h-3.5 text-amber-400 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
                   </svg>
+                  <span *ngIf="cell.customAudioPath" class="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400" title="Áudio personalizado anexado"></span>
                 </button>
 
-                <!-- Snapshot Image (oculto se fonte for apenas áudio) -->
-                <button *ngIf="getMediaSource(track.mediaSourceId)?.hasVideo !== false"
+                <!-- Snapshot Image -->
+                <button *ngIf="cell.customImagePath || getMediaSource(track.mediaSourceId)?.hasVideo !== false"
                         (click)="previewSnapshot(row, track)"
-                        title="Ver imagem da cena"
-                        class="p-1 rounded bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white transition">
-                  <svg class="w-3.5 h-3.5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        [title]="cell.customImagePath ? 'Ver imagem personalizada: ' + cell.imageFileName : 'Ver imagem da cena'"
+                        class="p-1 rounded bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white transition relative">
+                  <svg class="w-3.5 h-3.5" [ngClass]="(cell.customImagePath || cell.imageFileName) ? 'text-amber-400' : 'text-sky-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
+                  <span *ngIf="cell.customImagePath" class="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400" title="Imagem personalizada anexada"></span>
                 </button>
               </div>
             </div>
 
             <!-- TEXTO DA LEGENDA (EDITÁVEL INLINE) -->
             <textarea [(ngModel)]="cell.text" rows="2"
+                      (mousedown)="$event.stopPropagation()"
                       class="bg-transparent border-0 text-slate-100 text-xs resize-none focus:outline-none focus:bg-slate-800/80 rounded px-1 py-0.5 leading-snug w-full">
             </textarea>
 
@@ -341,7 +405,11 @@
 
           <!-- Célula Vazia (sem fala correspondente) -->
           <ng-template #emptyCell>
-            <div class="border border-dashed border-slate-800 rounded-lg p-2 flex flex-col items-center justify-center h-[96px] text-slate-600 text-xs">
+            <div (dragover)="onCellDragOver($event, track.id, tIdx, rIdx)"
+                 (drop)="onCellDrop($event, track.id, tIdx, rIdx)"
+                 [class.border-indigo-400]="dragOverTarget?.trackId === track.id && dragOverTarget?.rowIndex === rIdx"
+                 [class.bg-indigo-950]="dragOverTarget?.trackId === track.id && dragOverTarget?.rowIndex === rIdx"
+                 class="border border-dashed border-slate-800 rounded-lg p-2 flex flex-col items-center justify-center h-[96px] text-slate-600 text-xs transition-all">
               <span>(Sem fala vinculada)</span>
               <div class="flex items-center gap-1.5 mt-1">
                 <button (click)="openShiftModal(track.id, rIdx)" class="text-[10px] text-indigo-400 hover:underline">Deslocar ms</button>
@@ -445,27 +513,13 @@
           </label>
 
           <label class="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" [(ngModel)]="exportOptions.generateVideos" class="rounded text-indigo-600 bg-slate-900 border-slate-700" />
+            <span class="text-slate-200 font-medium">Gerar clipes de Vídeo (.mp4) de cada fala</span>
+          </label>
+
+          <label class="flex items-center gap-2.5 cursor-pointer">
             <input type="checkbox" [(ngModel)]="exportOptions.copyToAnkiCollectionMedia" class="rounded text-indigo-600 bg-slate-900 border-slate-700" />
             <span class="text-slate-200 font-medium">Copiar arquivos para a pasta collection.media do Anki</span>
-          </label>
-
-          <div class="h-px bg-slate-800 my-1"></div>
-          <span class="block font-bold text-indigo-400 text-[11px] uppercase tracking-wider">Aprimoramento de Áudio (.mp3):</span>
-
-          <label class="flex items-start gap-2.5 cursor-pointer">
-            <input type="checkbox" [(ngModel)]="exportOptions.trimSilence" class="rounded text-indigo-600 bg-slate-900 border-slate-700 mt-0.5" />
-            <div class="flex flex-col">
-              <span class="text-slate-200 font-medium">Remover silêncio no início e fim (Silence Trimming)</span>
-              <span class="text-[10px] text-slate-400">Elimina pausas mudas antes e depois da frase sem cortar palavras</span>
-            </div>
-          </label>
-
-          <label class="flex items-start gap-2.5 cursor-pointer">
-            <input type="checkbox" [(ngModel)]="exportOptions.normalizeAudio" class="rounded text-indigo-600 bg-slate-900 border-slate-700 mt-0.5" />
-            <div class="flex flex-col">
-              <span class="text-slate-200 font-medium">Normalizar volume do áudio (EBU R128 para MP3)</span>
-              <span class="text-[10px] text-slate-400">Uniformiza o volume de todos os cards para audição confortável no Anki</span>
-            </div>
           </label>
         </div>
       </div>
@@ -536,21 +590,25 @@
     </div>
   </div>
 
-  <!-- MODAL DE CONFIGURAÇÃO DE SAÍDA (FORMATO TXT) -->
+  <!-- MODAL DE CONFIGURAÇÃO DE SAÍDA (FORMATO DE SAÍDA) -->
   <div *ngIf="isOutputModalOpen" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-xl p-6 shadow-2xl flex flex-col gap-4">
       <div class="flex items-center justify-between border-b border-slate-700 pb-3">
         <h3 class="text-base font-bold text-white flex items-center gap-2">
-          <span>Configuração do Formato TXT</span>
+          <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <span>Formato de saída</span>
         </h3>
         <button (click)="isOutputModalOpen = false" class="text-slate-400 hover:text-white">✕</button>
       </div>
 
       <div class="space-y-4 text-xs">
-        <!-- Separador de Coluna -->
+        <!-- Separador de Coluna / Tipo de Saída -->
         <div>
-          <label class="block font-medium text-slate-300 mb-1">Separador de Colunas:</label>
-          <div class="flex items-center gap-3">
+          <label class="block font-medium text-slate-300 mb-1.5">Formato / Separador de Colunas:</label>
+          <div class="flex flex-wrap items-center gap-3">
             <label class="flex items-center gap-1.5 cursor-pointer">
               <input type="radio" [(ngModel)]="project.output.separator" value="&#9;" name="sep" />
               <span>Tabulação (\t)</span>
@@ -567,34 +625,47 @@
               <input type="radio" [(ngModel)]="project.output.separator" value="|" name="sep" />
               <span>Pipe (|)</span>
             </label>
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" [(ngModel)]="project.output.separator" value="csv" name="sep" />
+              <span class="text-emerald-400 font-semibold">CSV (.csv)</span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" [(ngModel)]="project.output.separator" value="sql" name="sep" />
+              <span class="text-sky-400 font-semibold">SQL (.sql)</span>
+            </label>
           </div>
         </div>
 
+        <!-- Opções para SQL -->
+        <div *ngIf="project.output.separator === 'sql'" class="p-3 bg-slate-900/80 rounded-xl border border-slate-700/80 space-y-1.5">
+          <label class="block font-medium text-slate-300 text-xs">Nome da Tabela no Banco SQL:</label>
+          <input type="text" [(ngModel)]="project.output.sqlTableName" placeholder="anki_cards"
+                 class="bg-slate-950 border border-slate-700 rounded px-2.5 py-1 text-slate-200 w-full focus:outline-none" />
+          <p class="text-[11px] text-slate-400">Gera comandos SQL no formato: <code>INSERT INTO anki_cards (colunas...) VALUES (...);</code></p>
+        </div>
+
         <!-- Aspas e Enclosing -->
-        <div>
-          <label class="block font-medium text-slate-300 mb-1">Modo de Aspas:</label>
-          <select [(ngModel)]="project.output.quoteMode" class="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200 w-full focus:outline-none">
+        <div [class.opacity-50]="project.output.separator === 'csv' || project.output.separator === 'sql'">
+          <label class="block font-medium text-slate-300 mb-1">
+            Modo de Aspas:
+            <span *ngIf="project.output.separator === 'csv'" class="text-[11px] text-emerald-400 font-normal ml-1">(Definido automaticamente pelo padrão RFC 4180 do CSV)</span>
+            <span *ngIf="project.output.separator === 'sql'" class="text-[11px] text-sky-400 font-normal ml-1">(Definido automaticamente pelo padrão SQL com aspas simples)</span>
+          </label>
+          <select [(ngModel)]="project.output.quoteMode"
+                  [disabled]="project.output.separator === 'csv' || project.output.separator === 'sql'"
+                  class="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200 w-full focus:outline-none disabled:cursor-not-allowed">
             <option value="when-needed">Apenas quando necessário (padrão)</option>
             <option value="always">Sempre com aspas duplas ("campo")</option>
             <option value="none">Sem aspas</option>
           </select>
         </div>
 
-        <!-- Prefixo e Sufixo de Linha (para formatos customizados como (campo1, campo2)) -->
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block font-medium text-slate-300 mb-1">Prefixo da Linha (ex: "("):</label>
-            <input type="text" [(ngModel)]="project.output.linePrefix" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 w-full" placeholder="(" />
-          </div>
-          <div>
-            <label class="block font-medium text-slate-300 mb-1">Sufixo da Linha (ex: ")"):</label>
-            <input type="text" [(ngModel)]="project.output.lineSuffix" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 w-full" placeholder=")" />
-          </div>
-        </div>
-
         <!-- Cabeçalhos Anki -->
-        <label class="flex items-center gap-2 cursor-pointer pt-2">
-          <input type="checkbox" [(ngModel)]="project.output.writeAnkiHeaders" class="rounded text-indigo-600 bg-slate-900 border-slate-700" />
+        <label class="flex items-center gap-2 cursor-pointer pt-1"
+               [class.opacity-50]="project.output.separator === 'csv' || project.output.separator === 'sql'">
+          <input type="checkbox" [(ngModel)]="project.output.writeAnkiHeaders"
+                 [disabled]="project.output.separator === 'csv' || project.output.separator === 'sql'"
+                 class="rounded text-indigo-600 bg-slate-900 border-slate-700 disabled:cursor-not-allowed" />
           <span class="text-slate-300">Incluir cabeçalhos Anki (#separator:tab, #html:true)</span>
         </label>
       </div>
@@ -745,6 +816,140 @@
                 class="px-5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs disabled:opacity-40 transition shadow-md shadow-indigo-600/20">
           Aplicar Deslocamento
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE MAPEAMENTO DE IMPORTAÇÃO ANKI / TABULAR (CSV / TXT) -->
+  <div *ngIf="isAnkiImportModalOpen && ankiImportResult"
+       class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl p-6 shadow-2xl flex flex-col gap-4 max-h-[92vh] overflow-hidden">
+      <!-- Header -->
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-3">
+          <div class="p-2 bg-emerald-600/20 text-emerald-400 rounded-lg border border-emerald-500/30">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-white flex items-center gap-2">
+              Importar Exportação do Anki / Tabela
+            </h3>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Arquivo: <span class="text-slate-200 font-mono">{{ ankiImportResult.fileName }}</span> •
+              <span class="text-emerald-400 font-medium">{{ ankiImportResult.totalRows }} linhas detectadas</span>
+              <span *ngIf="ankiImportResult.episodeName"> • Episódio: <strong class="text-indigo-300">{{ ankiImportResult.episodeName }}</strong></span>
+            </p>
+          </div>
+        </div>
+        <button (click)="isAnkiImportModalOpen = false" class="text-slate-400 hover:text-white text-lg">✕</button>
+      </div>
+
+      <!-- Barra de Controle: Separador -->
+      <div class="flex items-center justify-between bg-slate-950/60 border border-slate-800 rounded-xl px-4 py-2 text-xs">
+        <div class="flex items-center gap-2">
+          <span class="text-slate-400 font-medium">Delimitador do Arquivo:</span>
+          <div class="flex items-center gap-2">
+            <button *ngFor="let s of [{ val: ';', lbl: 'Ponto e vírgula (;)' }, { val: '\t', lbl: 'Tabulação (\\t)' }, { val: ',', lbl: 'Vírgula (,)' }, { val: '|', lbl: 'Pipe (|)' }]"
+                    (click)="changeAnkiSeparator(s.val)"
+                    [class.bg-indigo-600]="ankiImportResult.separator === s.val"
+                    [class.text-white]="ankiImportResult.separator === s.val"
+                    [class.bg-slate-800]="ankiImportResult.separator !== s.val"
+                    [class.text-slate-300]="ankiImportResult.separator !== s.val"
+                    class="px-2.5 py-1 rounded font-mono text-[11px] border border-slate-700 transition">
+              {{ s.lbl }}
+            </button>
+          </div>
+        </div>
+        <span class="text-slate-400">{{ ankiImportResult.columnsCount }} colunas encontradas</span>
+      </div>
+
+      <!-- Tabela de Mapeamento de Colunas -->
+      <div class="flex-1 overflow-y-auto space-y-3 pr-1">
+        <div *ngFor="let col of ankiImportMappings"
+             class="p-3.5 rounded-xl border transition-all"
+             [ngClass]="col.type === 'ignore' ? 'bg-slate-950/40 border-slate-800/60 opacity-60' : 'bg-slate-800/60 border-slate-700'">
+
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-2.5">
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded font-mono text-xs font-bold"
+                    [ngClass]="col.type === 'ignore' ? 'bg-slate-800 text-slate-400' : 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/30'">
+                Coluna {{ col.index + 1 }}
+              </span>
+              <span *ngIf="col.type === 'id'" class="text-[11px] text-amber-400 font-semibold flex items-center gap-1">
+                ⏱ ID & Tempo da Linha
+              </span>
+            </div>
+
+            <!-- Seleção de Tipo -->
+            <div class="flex items-center gap-2">
+              <label class="text-[11px] text-slate-400">Tipo de Conteúdo:</label>
+              <select [(ngModel)]="col.type"
+                      class="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded px-2.5 py-1 focus:outline-none">
+                <option value="ignore">❌ Ignorar coluna</option>
+                <option value="id">⏱ ID / Tempo (Nome & Timestamp)</option>
+                <option value="text">💬 Texto (Falas / Legenda)</option>
+                <option value="audio">🎵 Áudio (.mp3 / [sound:...])</option>
+                <option value="image">🖼 Imagem (.jpg / &lt;img&gt;)</option>
+              </select>
+            </div>
+
+            <!-- Configuração de Ação (Nova Faixa ou Combinar) -->
+            <div *ngIf="col.type !== 'ignore' && col.type !== 'id'" class="flex items-center gap-2">
+              <label class="text-[11px] text-slate-400">Ação:</label>
+              <select [(ngModel)]="col.action"
+                      class="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1 focus:outline-none">
+                <option value="new_track">Criar Nova Faixa</option>
+                <option value="combine">Combinar com Faixa Existente</option>
+              </select>
+
+              <!-- Rótulo da Nova Faixa -->
+              <input *ngIf="col.action === 'new_track'"
+                     type="text"
+                     [(ngModel)]="col.targetTrackLabel"
+                     placeholder="Rótulo (ex: JP, PT)"
+                     class="w-24 bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1 focus:outline-none" />
+
+              <!-- Seletor de Faixa para Combinar -->
+              <select *ngIf="col.action === 'combine'"
+                      [(ngModel)]="col.combineWithTrackIndex"
+                      class="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1 focus:outline-none">
+                <option *ngFor="let t of getAvailableCombineTargets(col.index)" [value]="t.index">
+                  {{ t.label }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Amostra de Dados da Coluna -->
+          <div class="bg-slate-950/80 rounded-lg p-2 border border-slate-800/80 font-mono text-[11px] text-slate-300 space-y-1">
+            <div *ngFor="let s of col.sampleValues" class="truncate" [title]="s">
+              <span class="text-slate-500 mr-2">•</span>{{ s || '(vazio)' }}
+            </div>
+            <div *ngIf="col.sampleValues.length === 0" class="text-slate-500 italic">
+              Nenhum dado encontrado nas primeiras linhas.
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Rodapé -->
+      <div class="flex items-center justify-between border-t border-slate-800 pt-3">
+        <span class="text-xs text-slate-400">
+          As colunas selecionadas serão convertidas em faixas de legenda ou associadas aos cards correspondentes.
+        </span>
+        <div class="flex items-center gap-2">
+          <button (click)="isAnkiImportModalOpen = false"
+                  class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-lg text-xs">
+            Cancelar
+          </button>
+          <button (click)="confirmAnkiImport()"
+                  class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs shadow-md shadow-emerald-600/20">
+            Importar para a Grid
+          </button>
+        </div>
       </div>
     </div>
   </div>

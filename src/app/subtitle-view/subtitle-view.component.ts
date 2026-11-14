@@ -3,7 +3,13 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { ElectronService } from '../core/services/electron.service';
-import { SubtitleParserService } from '../core/services/subtitle-parser.service';
+import {
+  SubtitleParserService,
+  AnkiParseResult,
+  AnkiColumnMapping,
+  AnkiColumnType,
+  AnkiColumnAction
+} from '../core/services/subtitle-parser.service';
 import { SubtitleAlignerService } from '../core/services/subtitle-aligner.service';
 import { SubtitleHistoryService } from '../core/services/subtitle-history.service';
 import {
@@ -31,6 +37,10 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     timingTrackId: '',
     sequenceTrackId: '',
     rows: [],
+    alignmentToleranceMs: 500,
+    groupByCounterpart: true,
+    removeStyledLines: true,
+    excludeNoCounterpart: false,
     output: {
       separator: '\t',
       quoteMode: 'when-needed',
@@ -55,19 +65,42 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
   public isExporting = false;
   public currentProjectFilePath: string | null = null;
 
+  // Modal de Importação Tabular / Anki (CSV / TXT)
+  public isAnkiImportModalOpen = false;
+  public ankiImportResult: AnkiParseResult | null = null;
+  public ankiImportMappings: AnkiColumnMapping[] = [];
+  public currentRawImportContent: string | null = null;
+
+  // Estado visual do Arraste na tela (Drag & Drop)
+  public isDraggingOver = false;
+  private dragCounter = 0;
+
+  // Estado de arraste de cards individuais na grid (coluna 2 em diante)
+  public draggingCardState: { trackId: string; trackIndex: number; rowIndex: number } | null = null;
+  public dragOverTarget: { trackId: string; rowIndex: number } | null = null;
+
   public exportOptions: {
     outputTxtPath: string;
     mediaOutputDir: string;
     generateAudio: boolean;
     generateImages: boolean;
+    generateVideos: boolean;
     copyToAnkiCollectionMedia: boolean;
     trimSilence: boolean;
     normalizeAudio: boolean;
+    audioFormat?: string;
+    audioBitrate?: string;
+    imageWidth?: number;
+    imageHeight?: number;
+    videoWidth?: number;
+    videoHeight?: number;
+    videoBitrate?: string;
   } = {
     outputTxtPath: '',
     mediaOutputDir: '',
     generateAudio: true,
     generateImages: true,
+    generateVideos: false,
     copyToAnkiCollectionMedia: false,
     trimSilence: true,
     normalizeAudio: true
@@ -161,6 +194,20 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
   }
 
   public ngOnInit(): void {
+    void this.electron.getSettings().then(s => {
+      if (s) {
+        this.exportOptions.trimSilence = s.trimSilence !== false;
+        this.exportOptions.normalizeAudio = s.normalizeAudio !== false;
+        this.exportOptions.audioFormat = s.audioFormat;
+        this.exportOptions.audioBitrate = s.audioBitrate;
+        this.exportOptions.imageWidth = s.imageWidth;
+        this.exportOptions.imageHeight = s.imageHeight;
+        this.exportOptions.videoWidth = s.videoWidth;
+        this.exportOptions.videoHeight = s.videoHeight;
+        this.exportOptions.videoBitrate = s.videoBitrate;
+      }
+    });
+
     this.progressUnsub = this.electron.onExportProgress((p: any) => {
       this.exportProgress = p;
       this.cdr.detectChanges();
@@ -168,7 +215,9 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
 
     // Ouvinte para ações do menu da aplicação
     this.menuUnsub = this.electron.onMenuTriggerAction((action: string) => {
-      if (action === 'save-project') {
+      if (action === 'new-project') {
+        this.resetProject();
+      } else if (action === 'save-project') {
         this.saveProject();
       } else if (action === 'save-project-as') {
         this.saveProjectAs();
@@ -245,7 +294,9 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     try {
       this.showToast(`Extraindo ${subTitle} do arquivo...`, 'info');
       const rawContent = await this.electron.extractEmbeddedSubtitle(source.filePath, subStreamIndex);
-      const cues = this.parser.parseSubtitle(rawContent, `${subTitle}.srt`);
+      const cues = this.parser.parseSubtitle(rawContent, `${subTitle}.srt`, {
+        removeStyledLines: this.project.removeStyledLines !== false
+      });
 
       const trackId = `track_emb_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
       const newTrack: SubtitleTrack = {
@@ -272,66 +323,368 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     }
   }
 
-  // Drag & drop direto na tela de arquivos de vídeo, áudio e legendas
-  public onDragOver(event: DragEvent): void {
+  // ================= LIMPEZA / NOVO PROJETO =================
+  public resetProject(): void {
+    this.stopAudio();
+    this.history.clear();
+    this.currentProjectFilePath = null;
+    localStorage.removeItem('last_subtitle_project_path');
+
+    this.project = {
+      id: 'proj_' + Date.now(),
+      mediaName: 'Novo_Projeto',
+      mediaSources: [],
+      tracks: [],
+      timingTrackId: '',
+      sequenceTrackId: '',
+      rows: [],
+      alignmentToleranceMs: 500,
+      groupByCounterpart: true,
+      removeStyledLines: true,
+      excludeNoCounterpart: false,
+      output: {
+        separator: '\t',
+        quoteMode: 'when-needed',
+        linePrefix: '',
+        lineSuffix: '',
+        writeAnkiHeaders: true,
+        columns: ['id', 'seq', 'sound_1', 'image_1', 'text_1'],
+        tags: []
+      }
+    };
+
+    this.availableExportColumns = [];
+    this.lastExportResult = null;
+    this.previewSnapshotState = null;
+    this.ankiImportResult = null;
+    this.currentRawImportContent = null;
+    this.exportOptions.outputTxtPath = '';
+    this.exportOptions.mediaOutputDir = '';
+
+    this.rebuildColumns();
+    this.cdr.detectChanges();
+    this.showToast('Projeto limpo com sucesso! Pronto para nova importação.', 'info');
+  }
+
+  // ================= ARRASTE DE CARDS DE LEGENDA NA GRID =================
+  public onCellDragStart(event: DragEvent, trackId: string, trackIndex: number, rowIndex: number): void {
+    if (trackIndex < 1) {
+      event.preventDefault();
+      return;
+    }
+    this.draggingCardState = { trackId, trackIndex, rowIndex };
+    this.dragOverTarget = null;
+    if (event.dataTransfer) {
+      event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'cell-block', trackId, trackIndex, rowIndex }));
+      event.dataTransfer.effectAllowed = 'move';
+    }
+  }
+
+  public onCellDragOver(event: DragEvent, trackId: string, trackIndex: number, rowIndex: number): void {
+    if (this.draggingCardState && this.draggingCardState.trackId === trackId && trackIndex >= 1) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = 'move';
+      }
+      this.dragOverTarget = { trackId, rowIndex };
+    }
+  }
+
+  public onCellDrop(event: DragEvent, trackId: string, trackIndex: number, rowIndex: number): void {
+    if (this.draggingCardState && this.draggingCardState.trackId === trackId && trackIndex >= 1) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const fromIndex = this.draggingCardState.rowIndex;
+      const toIndex = rowIndex;
+
+      if (fromIndex !== toIndex) {
+        this.history.pushState(this.project.rows, `Mover bloco da linha ${fromIndex + 1} para ${toIndex + 1}`);
+        this.project.rows = this.aligner.moveBlockToRow(this.project.rows, trackId, fromIndex, toIndex);
+        this.showToast(`Bloco de falas movido para a linha ${toIndex + 1}!`, 'success');
+      }
+
+      this.draggingCardState = null;
+      this.dragOverTarget = null;
+    }
+  }
+
+  public onCellDragEnd(): void {
+    this.draggingCardState = null;
+    this.dragOverTarget = null;
+  }
+
+  // ================= DRAG & DROP UNIVERSAL NA TELA =================
+  @HostListener('window:dragover', ['$event'])
+  public onWindowDragOver(event: DragEvent): void {
+    if (this.hasFilesPayload(event)) {
+      event.preventDefault();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = 'copy';
+      }
+    }
+  }
+
+  @HostListener('window:drop', ['$event'])
+  public onWindowDrop(event: DragEvent): void {
+    if (this.hasFilesPayload(event)) {
+      event.preventDefault();
+    }
+  }
+
+  private hasFilesPayload(event: DragEvent): boolean {
+    if (!event.dataTransfer) return false;
+    const types = event.dataTransfer.types;
+    if (!types) return false;
+    return Array.from(types).some(t => t.toLowerCase() === 'files');
+  }
+
+  public onDragEnter(event: DragEvent): void {
+    if (this.draggingCardState !== null) return;
+    if (!this.hasFilesPayload(event)) return;
     event.preventDefault();
     event.stopPropagation();
+    this.dragCounter++;
+    this.isDraggingOver = true;
+  }
+
+  public onDragOver(event: DragEvent): void {
+    if (this.draggingCardState !== null) return;
+    if (!this.hasFilesPayload(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
+    this.isDraggingOver = true;
+  }
+
+  public onDragLeave(event: DragEvent): void {
+    if (this.draggingCardState !== null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.dragCounter--;
+    if (this.dragCounter <= 0) {
+      this.dragCounter = 0;
+      this.isDraggingOver = false;
+    }
   }
 
   public async onFileDrop(event: DragEvent): Promise<void> {
+    if (this.draggingCardState !== null) return;
     event.preventDefault();
     event.stopPropagation();
+    this.dragCounter = 0;
+    this.isDraggingOver = false;
 
     if (!event.dataTransfer || !event.dataTransfer.files || event.dataTransfer.files.length === 0) return;
 
     for (let i = 0; i < event.dataTransfer.files.length; i++) {
       const file = event.dataTransfer.files[i];
-      const filePath = (file as any).path;
-      if (!filePath) continue;
-
+      const filePath = this.electron.getPathForFile(file) || (file as any).path || '';
       const ext = file.name.split('.').pop()?.toLowerCase() || '';
 
-      // Verifica se é legenda
-      if (['srt', 'ass', 'ssa', 'vtt', 'sub', 'sbv', 'lrc', 'txt'].includes(ext)) {
-        const text = await file.text();
-        const cues = this.parser.parseSubtitle(text, file.name);
-        const trackId = `track_drop_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
-        const isFirst = this.project.tracks.length === 0;
+      // 1. Projeto salvo em formato JSON (.ankisubs.json ou .json)
+      if (ext === 'json' || file.name.endsWith('.ankisubs.json')) {
+        try {
+          const text = await file.text();
+          const parsed = JSON.parse(text);
+          if (parsed && (parsed.tracks || parsed.rows || parsed.mediaName)) {
+            this.applyLoadedProject(parsed, filePath || file.name);
+            continue;
+          }
+        } catch (err: any) {
+          console.warn('Falha ao processar arquivo JSON:', err);
+        }
+      }
 
-        let label = isFirst ? 'JP' : 'PT';
-        if (/pt|por|bra/i.test(file.name)) label = 'PT';
-        else if (/jp|jap/i.test(file.name)) label = 'JP';
-        else if (/en|eng/i.test(file.name)) label = 'EN';
-        else label = `Sub ${this.project.tracks.length + 1}`;
+      // 2. Imagens soltas na tela
+      if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext)) {
+        this.handleDroppedImage(filePath, file.name);
+        continue;
+      }
 
-        this.project.tracks.push({
-          id: trackId,
-          label,
-          filePath,
-          mediaSourceId: this.project.mediaSources[0]?.id || '',
-          audioStreamIndex: 0,
-          offsetMs: 0,
-          padStartMs: 250,
-          padEndMs: 300,
-          cues
-        });
+      // 3. Legendas ou Exportações Anki / Planilhas (CSV, TXT, SRT, ASS, etc.)
+      if (['srt', 'ass', 'ssa', 'vtt', 'sub', 'sbv', 'lrc', 'txt', 'csv'].includes(ext)) {
+        try {
+          const text = await file.text();
+          if (this.parser.isAnkiOrTabularContent(text, file.name)) {
+            this.openAnkiImportModal(text, file.name);
+            return; // abre popup para o usuário configurar o mapeamento
+          }
 
-        if (!this.project.timingTrackId) this.project.timingTrackId = trackId;
-        if (!this.project.sequenceTrackId) this.project.sequenceTrackId = trackId;
+          // Legenda padrão
+          this.addSubtitleTrackFromContent(text, file.name, filePath || file.name);
+          continue;
+        } catch (err: any) {
+          this.showToast(`Erro ao ler arquivo de legenda ${file.name}: ${err.message}`, 'error');
+          continue;
+        }
+      }
 
-        this.rebuildColumns();
-        this.autoAlign();
-        this.showToast(`Legenda '${file.name}' carregada!`, 'success');
-      } else {
-        // Assume arquivo de mídia (vídeo ou áudio)
+      // 4. Arquivos de Mídia (Vídeo ou Áudio)
+      if (filePath) {
         try {
           const probeData = await this.electron.probeMedia(filePath);
           this.processLoadedMedia(filePath, file.name, probeData);
         } catch (err: any) {
           this.showToast(`Não foi possível carregar ${file.name}: ${err.message}`, 'error');
         }
+      } else {
+        this.showToast(`Não foi possível obter o caminho do arquivo de mídia ${file.name}.`, 'error');
       }
     }
+  }
+
+  // Soltar arquivo especificamente sobre uma linha da grid
+  public async onRowFileDrop(event: DragEvent, row: AlignedRow): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+    this.dragCounter = 0;
+    this.isDraggingOver = false;
+
+    if (!event.dataTransfer || !event.dataTransfer.files || event.dataTransfer.files.length === 0) return;
+    const file = event.dataTransfer.files[0];
+    const filePath = this.electron.getPathForFile(file) || (file as any).path || '';
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+
+    // Imagem solta diretamente na linha
+    if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext)) {
+      this.history.pushState(this.project.rows, 'Adicionar imagem personalizada na linha');
+      const primaryTrackId = this.project.timingTrackId || this.project.tracks[0]?.id;
+      if (primaryTrackId && row.cells[primaryTrackId]) {
+        row.cells[primaryTrackId]!.customImagePath = filePath;
+        row.cells[primaryTrackId]!.imageFileName = file.name;
+        this.showToast(`Imagem vinculada à linha ${row.index}: ${file.name}`, 'success');
+      }
+      return;
+    }
+
+    // Áudio solto diretamente na linha
+    if (['mp3', 'wav', 'ogg', 'opus', 'aac', 'flac', 'm4a'].includes(ext)) {
+      this.history.pushState(this.project.rows, 'Adicionar áudio personalizado na linha');
+      const primaryTrackId = this.project.timingTrackId || this.project.tracks[0]?.id;
+      if (primaryTrackId && row.cells[primaryTrackId]) {
+        row.cells[primaryTrackId]!.customAudioPath = filePath;
+        row.cells[primaryTrackId]!.audioFileName = file.name;
+        this.showToast(`Áudio vinculado à linha ${row.index}: ${file.name}`, 'success');
+      }
+      return;
+    }
+
+    // Outros formatos repassam para o importador global
+    await this.onFileDrop(event);
+  }
+
+  public handleDroppedImage(filePath: string, filename: string): void {
+    if (this.project.rows.length === 0) {
+      this.showToast('Nenhuma linha na grid para associar a imagem.', 'info');
+      return;
+    }
+
+    // Se o modal de snapshot estiver aberto, associa a ele
+    if (this.previewSnapshotState?.cell) {
+      this.previewSnapshotState.cell.customImagePath = filePath;
+      this.previewSnapshotState.cell.imageFileName = filename;
+      this.previewSnapshotState.imageUrl = `media://file?path=${encodeURIComponent(filePath)}`;
+      this.previewSnapshotState.hasError = false;
+      this.showToast(`Imagem associada à fala atual: ${filename}`, 'success');
+      return;
+    }
+
+    // Caso contrário, procura a primeira linha sem imagem personalizada
+    const primaryTrackId = this.project.timingTrackId || this.project.tracks[0]?.id;
+    if (!primaryTrackId) return;
+
+    const firstWithoutImage = this.project.rows.find(r => r.cells[primaryTrackId] && !r.cells[primaryTrackId]?.customImagePath && !r.cells[primaryTrackId]?.imageFileName);
+    const targetRow = firstWithoutImage || this.project.rows[0];
+
+    if (targetRow.cells[primaryTrackId]) {
+      this.history.pushState(this.project.rows, 'Associar imagem na linha');
+      targetRow.cells[primaryTrackId]!.customImagePath = filePath;
+      targetRow.cells[primaryTrackId]!.imageFileName = filename;
+      this.showToast(`Imagem associada à linha ${targetRow.index}: ${filename}`, 'success');
+    }
+  }
+
+  // ================= MODAL DE IMPORTAÇÃO TABULAR / ANKI =================
+  public openAnkiImportModal(content: string, fileName: string): void {
+    this.currentRawImportContent = content;
+    const result = this.parser.parseAnkiDelimitedContent(content, fileName);
+    this.ankiImportResult = result;
+    this.ankiImportMappings = result.suggestedMappings;
+    this.isAnkiImportModalOpen = true;
+  }
+
+  public changeAnkiSeparator(sep: string): void {
+    if (!this.ankiImportResult || !this.currentRawImportContent) return;
+    this.ankiImportResult.separator = sep;
+    const rawRows = this.parser.parseDelimitedRows(this.currentRawImportContent, sep);
+    this.ankiImportResult.rawRows = rawRows;
+    this.ankiImportResult.totalRows = rawRows.length;
+
+    let columnsCount = 0;
+    for (const r of rawRows) {
+      if (r.length > columnsCount) columnsCount = r.length;
+    }
+    this.ankiImportResult.columnsCount = columnsCount;
+
+    for (const r of rawRows) {
+      while (r.length < columnsCount) r.push('');
+    }
+
+    const recomputed = this.parser.parseAnkiDelimitedContent(this.currentRawImportContent, this.ankiImportResult.fileName);
+    this.ankiImportMappings = recomputed.suggestedMappings;
+    this.ankiImportResult.suggestedMappings = recomputed.suggestedMappings;
+  }
+
+  public confirmAnkiImport(): void {
+    if (!this.ankiImportResult) return;
+    const { episodeName, tracks } = this.parser.buildCuesFromAnkiImport(
+      this.ankiImportResult,
+      this.ankiImportMappings
+    );
+
+    if (tracks.length === 0) {
+      this.showToast('Nenhuma faixa selecionada para importação.', 'error');
+      return;
+    }
+
+    if (episodeName && (!this.project.mediaName || this.project.mediaName === 'ReZero_Episodio_01' || this.project.mediaName === 'Deck')) {
+      this.project.mediaName = episodeName;
+    }
+
+    const defaultSourceId = this.project.mediaSources[0]?.id || '';
+
+    for (const t of tracks) {
+      const trackId = `track_anki_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+      this.project.tracks.push({
+        id: trackId,
+        label: t.label,
+        filePath: this.ankiImportResult.fileName,
+        mediaSourceId: defaultSourceId,
+        audioStreamIndex: 0,
+        offsetMs: 0,
+        padStartMs: 250,
+        padEndMs: 300,
+        cues: t.cues
+      });
+
+      if (!this.project.timingTrackId) this.project.timingTrackId = trackId;
+      if (!this.project.sequenceTrackId) this.project.sequenceTrackId = trackId;
+    }
+
+    this.rebuildColumns();
+    this.autoAlign();
+    this.isAnkiImportModalOpen = false;
+    this.showToast(`Importação concluída: ${tracks.length} faixa(s) e ${tracks[0]?.cues.length || 0} falas adicionadas!`, 'success');
+  }
+
+  public getAvailableCombineTargets(currentIdx: number): { index: number; label: string }[] {
+    return this.ankiImportMappings
+      .filter(m => m.index !== currentIdx && m.type !== 'ignore' && m.type !== 'id' && m.action === 'new_track')
+      .map(m => ({ index: m.index, label: m.targetTrackLabel || `Faixa ${m.index + 1}` }));
   }
 
   public removeMediaSource(index: number): void {
@@ -349,41 +702,48 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     const files = await this.electron.selectSubFiles();
     if (!files || files.length === 0) return;
 
-    const defaultSourceId = this.project.mediaSources[0]?.id || '';
-
     for (const f of files) {
-      const cues = this.parser.parseSubtitle(f.content, f.filename);
-      const isFirst = this.project.tracks.length === 0;
-
-      // Sugerir rótulo de idioma baseado no nome do arquivo
-      let label = isFirst ? 'JP' : 'PT';
-      if (/pt|por|bra/i.test(f.filename)) label = 'PT';
-      else if (/jp|jap/i.test(f.filename)) label = 'JP';
-      else if (/en|eng/i.test(f.filename)) label = 'EN';
-      else label = `Sub ${this.project.tracks.length + 1}`;
-
-      const trackId = `track_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
-      const newTrack: SubtitleTrack = {
-        id: trackId,
-        label,
-        filePath: f.filePath,
-        mediaSourceId: defaultSourceId,
-        audioStreamIndex: 0,
-        offsetMs: 0,
-        padStartMs: 250,
-        padEndMs: 300,
-        cues
-      };
-
-      this.project.tracks.push(newTrack);
-
-      if (!this.project.timingTrackId) this.project.timingTrackId = trackId;
-      if (!this.project.sequenceTrackId) this.project.sequenceTrackId = trackId;
+      if (this.parser.isAnkiOrTabularContent(f.content, f.filename)) {
+        this.openAnkiImportModal(f.content, f.filename);
+        continue;
+      }
+      this.addSubtitleTrackFromContent(f.content, f.filename, f.filePath);
     }
+  }
+
+  public addSubtitleTrackFromContent(content: string, filename: string, filePath: string): void {
+    const cues = this.parser.parseSubtitle(content, filename, {
+      removeStyledLines: this.project.removeStyledLines !== false
+    });
+    const isFirst = this.project.tracks.length === 0;
+
+    let label = isFirst ? 'JP' : 'PT';
+    if (/pt|por|bra/i.test(filename)) label = 'PT';
+    else if (/jp|jap/i.test(filename)) label = 'JP';
+    else if (/en|eng/i.test(filename)) label = 'EN';
+    else label = `Sub ${this.project.tracks.length + 1}`;
+
+    const trackId = `track_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+    const newTrack: SubtitleTrack = {
+      id: trackId,
+      label,
+      filePath,
+      mediaSourceId: this.project.mediaSources[0]?.id || '',
+      audioStreamIndex: 0,
+      offsetMs: 0,
+      padStartMs: 250,
+      padEndMs: 300,
+      cues
+    };
+
+    this.project.tracks.push(newTrack);
+
+    if (!this.project.timingTrackId) this.project.timingTrackId = trackId;
+    if (!this.project.sequenceTrackId) this.project.sequenceTrackId = trackId;
 
     this.rebuildColumns();
     this.autoAlign();
-    this.showToast(`${files.length} arquivo(s) de legenda adicionado(s)!`, 'success');
+    this.showToast(`Legenda '${filename}' carregada com ${cues.length} falas!`, 'success');
   }
 
   public removeTrack(trackIndex: number): void {
@@ -421,7 +781,12 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       this.history.pushState(this.project.rows, 'Auto-Alinhar');
     }
     const tolerance = this.project.alignmentToleranceMs || 500;
-    this.project.rows = this.aligner.autoAlignTracks(this.project.tracks, tolerance);
+    this.project.rows = this.aligner.autoAlignTracks(this.project.tracks, {
+      toleranceMs: tolerance,
+      groupByCounterpart: this.project.groupByCounterpart !== false,
+      joinSentences: true,
+      excludeNoCounterpart: this.project.excludeNoCounterpart === true
+    });
     this.showToast(`Grid alinhada com tolerância de ${tolerance}ms: ${this.project.rows.length} falas encontradas.`, 'info');
   }
 
@@ -525,6 +890,27 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       return;
     }
 
+    // 1. Áudio personalizado importado diretamente
+    if (cell.customAudioPath) {
+      try {
+        this.stopAudio();
+        this.playingRowId = row.id;
+        this.playingAudioTrackId = track.id;
+        this.activeAudioUrl = `media://file?path=${encodeURIComponent(cell.customAudioPath)}`;
+        this.audioElement = new Audio(this.activeAudioUrl);
+        this.audioElement.onended = () => this.stopAudio();
+        this.audioElement.onerror = () => {
+          this.showToast('Erro ao reproduzir áudio personalizado da fala.', 'error');
+          this.stopAudio();
+        };
+        await this.audioElement.play();
+      } catch (err: any) {
+        this.showToast('Erro ao reproduzir áudio: ' + err.message, 'error');
+        this.stopAudio();
+      }
+      return;
+    }
+
     const source = this.project.mediaSources.find((s: MediaSource) => s.id === track.mediaSourceId);
     if (!source || !source.filePath) {
       this.showToast(`Nenhuma mídia vinculada para a legenda ${track.label}.`, 'error');
@@ -540,15 +926,19 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       const effectiveEnd = Math.max(effectiveStart + 100, cell.endMs + (track.offsetMs || 0) + (track.padEndMs || 0));
       const streamIdx = track.audioStreamIndex !== undefined ? track.audioStreamIndex : (source.audioStreamIndex || 0);
 
-      const tempName = `preview_${track.id}_${cell.startMs}_${Date.now()}.mp3`;
+      const settings = await this.electron.getSettings();
+      const ext = settings?.audioFormat || 'mp3';
+      const tempName = `preview_${track.id}_${cell.startMs}_${Date.now()}.${ext}`;
       const outPath = await this.electron.cutAudio({
         sourcePath: source.filePath,
         audioStreamIndex: streamIdx,
         startMs: effectiveStart,
         endMs: effectiveEnd,
         outputPath: tempName,
-        trimSilence: this.exportOptions.trimSilence !== false,
-        normalizeAudio: this.exportOptions.normalizeAudio !== false
+        format: settings?.audioFormat,
+        bitrate: settings?.audioBitrate,
+        trimSilence: settings?.trimSilence !== false,
+        normalizeAudio: settings?.normalizeAudio !== false
       });
 
       // Formato de URL seguro com query param
@@ -582,6 +972,18 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     const cell = row.cells[track.id];
     if (!cell) return;
 
+    // Imagem personalizada já vinculada na célula
+    if (cell.customImagePath) {
+      this.previewSnapshotState = {
+        row,
+        track,
+        cell,
+        imageUrl: `media://file?path=${encodeURIComponent(cell.customImagePath)}`,
+        hasError: false
+      };
+      return;
+    }
+
     const source = this.project.mediaSources.find((s: MediaSource) => s.id === track.mediaSourceId);
     if (!source || !source.filePath) {
       this.previewSnapshotState = {
@@ -608,6 +1010,7 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     }
 
     try {
+      const settings = await this.electron.getSettings();
       const midTime = Math.round((cell.startMs + cell.endMs) / 2) + (track.offsetMs || 0);
       const tempName = `snapshot_${track.id}_${midTime}_${Date.now()}.jpg`;
 
@@ -615,7 +1018,8 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
         sourcePath: source.filePath,
         atMs: midTime,
         outputPath: tempName,
-        width: 480
+        width: settings?.imageWidth || 480,
+        height: settings?.imageHeight || 270
       });
 
       const imageUrl = `media://preview/${tempName}`;
@@ -645,6 +1049,7 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     if (!this.previewSnapshotState) return;
     const { cell } = this.previewSnapshotState;
     cell.imageFileName = undefined;
+    cell.customImagePath = undefined;
     this.previewSnapshotState = null;
     this.showToast('Snapshot removido da linha.', 'info');
   }
@@ -702,62 +1107,69 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
   public async loadProject(): Promise<void> {
     const res = await this.electron.loadProjectDialog();
     if (res && res.project) {
-      this.project = {
-        id: res.project.id || ('proj_' + Date.now()),
-        mediaName: res.project.mediaName || 'Projeto',
-        mediaSources: Array.isArray(res.project.mediaSources) ? res.project.mediaSources : [],
-        tracks: Array.isArray(res.project.tracks) ? res.project.tracks : [],
-        timingTrackId: res.project.timingTrackId || '',
-        sequenceTrackId: res.project.sequenceTrackId || '',
-        rows: Array.isArray(res.project.rows) ? res.project.rows : [],
-        alignmentToleranceMs: res.project.alignmentToleranceMs || 500,
-        output: res.project.output || {
-          separator: '\t',
-          quoteMode: 'when-needed',
-          linePrefix: '',
-          lineSuffix: '',
-          writeAnkiHeaders: true,
-          columns: ['id', 'seq', 'sound_1', 'image_1', 'text_1'],
-          tags: []
-        },
-        projectFilePath: res.filePath || res.project.projectFilePath
-      };
-      this.currentProjectFilePath = res.filePath || res.project.projectFilePath || null;
-      if (this.currentProjectFilePath) {
-        localStorage.setItem('last_subtitle_project_path', this.currentProjectFilePath);
-      }
-
-      // Restaurar caminhos e preferências de exportação salvos no projeto
-      if (this.project.output?.outputTxtPath) {
-        this.exportOptions.outputTxtPath = this.project.output.outputTxtPath;
-      }
-      if (this.project.output?.mediaOutputDir) {
-        this.exportOptions.mediaOutputDir = this.project.output.mediaOutputDir;
-      } else if (this.exportOptions.outputTxtPath) {
-        // Deduz {nome_txt}_midia se não estiver definido
-        const selected = this.exportOptions.outputTxtPath;
-        const normalized = selected.replace(/\\/g, '/');
-        const lastSlash = normalized.lastIndexOf('/');
-        if (lastSlash !== -1) {
-          const parentDir = selected.substring(0, lastSlash);
-          const fileName = selected.substring(lastSlash + 1);
-          const baseName = fileName.replace(/\.[^/.]+$/, '');
-          const separator = selected.includes('\\') ? '\\' : '/';
-          this.exportOptions.mediaOutputDir = `${parentDir}${separator}${baseName}_midia`;
-        }
-      }
-
-      if (this.project.output?.trimSilence !== undefined) {
-        this.exportOptions.trimSilence = this.project.output.trimSilence;
-      }
-      if (this.project.output?.normalizeAudio !== undefined) {
-        this.exportOptions.normalizeAudio = this.project.output.normalizeAudio;
-      }
-
-      this.history.clear();
-      this.showToast(`Projeto carregado: ${this.project.mediaName}`, 'success');
-      this.cdr.detectChanges();
+      this.applyLoadedProject(res.project, res.filePath);
     }
+  }
+
+  public applyLoadedProject(loadedProject: SubtitleProject, filePath?: string): void {
+    this.project = {
+      id: loadedProject.id || ('proj_' + Date.now()),
+      mediaName: loadedProject.mediaName || 'Projeto',
+      mediaSources: Array.isArray(loadedProject.mediaSources) ? loadedProject.mediaSources : [],
+      tracks: Array.isArray(loadedProject.tracks) ? loadedProject.tracks : [],
+      timingTrackId: loadedProject.timingTrackId || '',
+      sequenceTrackId: loadedProject.sequenceTrackId || '',
+      rows: Array.isArray(loadedProject.rows) ? loadedProject.rows : [],
+      alignmentToleranceMs: loadedProject.alignmentToleranceMs || 500,
+      groupByCounterpart: loadedProject.groupByCounterpart !== undefined ? loadedProject.groupByCounterpart : true,
+      removeStyledLines: loadedProject.removeStyledLines !== undefined ? loadedProject.removeStyledLines : true,
+      excludeNoCounterpart: loadedProject.excludeNoCounterpart !== undefined ? loadedProject.excludeNoCounterpart : false,
+      output: loadedProject.output || {
+        separator: '\t',
+        quoteMode: 'when-needed',
+        linePrefix: '',
+        lineSuffix: '',
+        writeAnkiHeaders: true,
+        columns: ['id', 'seq', 'sound_1', 'image_1', 'text_1'],
+        tags: []
+      },
+      projectFilePath: filePath || loadedProject.projectFilePath
+    };
+    this.currentProjectFilePath = filePath || loadedProject.projectFilePath || null;
+    if (this.currentProjectFilePath) {
+      localStorage.setItem('last_subtitle_project_path', this.currentProjectFilePath);
+    }
+
+    // Restaurar caminhos e preferências de exportação salvos no projeto
+    if (this.project.output?.outputTxtPath) {
+      this.exportOptions.outputTxtPath = this.project.output.outputTxtPath;
+    }
+    if (this.project.output?.mediaOutputDir) {
+      this.exportOptions.mediaOutputDir = this.project.output.mediaOutputDir;
+    } else if (this.exportOptions.outputTxtPath) {
+      const selected = this.exportOptions.outputTxtPath;
+      const normalized = selected.replace(/\\/g, '/');
+      const lastSlash = normalized.lastIndexOf('/');
+      if (lastSlash !== -1) {
+        const parentDir = selected.substring(0, lastSlash);
+        const fileName = selected.substring(lastSlash + 1);
+        const baseName = fileName.replace(/\.[^/.]+$/, '');
+        const separator = selected.includes('\\') ? '\\' : '/';
+        this.exportOptions.mediaOutputDir = `${parentDir}${separator}${baseName}_midia`;
+      }
+    }
+
+    if (this.project.output?.trimSilence !== undefined) {
+      this.exportOptions.trimSilence = this.project.output.trimSilence;
+    }
+    if (this.project.output?.normalizeAudio !== undefined) {
+      this.exportOptions.normalizeAudio = this.project.output.normalizeAudio;
+    }
+
+    this.rebuildColumns();
+    this.history.clear();
+    this.showToast(`Projeto carregado: ${this.project.mediaName}`, 'success');
+    this.cdr.detectChanges();
   }
 
   // ================= EXPORTAR PARA ANKI =================
@@ -777,6 +1189,7 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       const label = track.label || 'Faixa';
       const soundKey = `sound_${track.id}`;
       const imageKey = `image_${track.id}`;
+      const videoKey = `video_${track.id}`;
       const textKey = `text_${track.id}`;
 
       cols.push({
@@ -788,6 +1201,11 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
         key: imageKey,
         label: `Imagem (${label})`,
         selected: existingMap.has(imageKey) ? existingMap.get(imageKey)! : true
+      });
+      cols.push({
+        key: videoKey,
+        label: `Vídeo (${label})`,
+        selected: existingMap.has(videoKey) ? existingMap.get(videoKey)! : false
       });
       cols.push({
         key: textKey,
@@ -824,8 +1242,11 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
   }
 
   public async browseExportTxtPath(): Promise<void> {
-    const defaultName = `${this.project.mediaName || 'Deck'}_anki.txt`;
-    const selected = await this.electron.selectFile(`Salvar Arquivo de Importação Anki (${defaultName})`);
+    const isCsv = this.project.output?.separator === 'csv';
+    const isSql = this.project.output?.separator === 'sql';
+    const ext = isCsv ? '.csv' : (isSql ? '.sql' : '.txt');
+    const defaultName = `${this.project.mediaName || 'Deck'}_anki${ext}`;
+    const selected = await this.electron.selectFile(`Salvar Arquivo de Importação (${defaultName})`);
     if (selected) {
       this.exportOptions.outputTxtPath = selected;
 
@@ -860,7 +1281,7 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       .map(c => c.key);
 
     if (selectedColumns.length === 0) {
-      this.showToast('Selecione pelo menos uma coluna para gerar o arquivo .txt.', 'error');
+      this.showToast('Selecione pelo menos uma coluna para gerar o arquivo.', 'error');
       return;
     }
 
@@ -873,6 +1294,8 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     };
 
     try {
+      const settings = await this.electron.getSettings();
+
       const projectToExport: SubtitleProject = {
         ...this.project,
         output: {
@@ -886,9 +1309,17 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
         mediaOutputDir: this.exportOptions.mediaOutputDir,
         generateAudio: this.exportOptions.generateAudio,
         generateImages: this.exportOptions.generateImages,
+        generateVideos: this.exportOptions.generateVideos,
         copyToAnkiCollectionMedia: this.exportOptions.copyToAnkiCollectionMedia,
-        trimSilence: this.exportOptions.trimSilence !== false,
-        normalizeAudio: this.exportOptions.normalizeAudio !== false
+        audioFormat: settings?.audioFormat,
+        audioBitrate: settings?.audioBitrate,
+        trimSilence: settings?.trimSilence !== false,
+        normalizeAudio: settings?.normalizeAudio !== false,
+        imageWidth: settings?.imageWidth,
+        imageHeight: settings?.imageHeight,
+        videoWidth: settings?.videoWidth,
+        videoHeight: settings?.videoHeight,
+        videoBitrate: settings?.videoBitrate
       });
 
       this.lastExportResult = {

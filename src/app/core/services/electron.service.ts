@@ -23,6 +23,18 @@ export interface AppSettings {
   exportTxtPath: string;
   ankiConnectUrl: string;
   saveMode: 'both' | 'ankiconnect' | 'file';
+  // Áudio
+  audioBitrate?: '64k' | '96k' | '128k' | '192k' | '256k' | '320k';
+  audioFormat?: 'mp3' | 'aac' | 'ogg' | 'opus' | 'wav' | 'flac';
+  normalizeAudio?: boolean;
+  trimSilence?: boolean;
+  // Imagem
+  imageWidth?: number;
+  imageHeight?: number;
+  // Vídeo
+  videoWidth?: number;
+  videoHeight?: number;
+  videoBitrate?: '500k' | '800k' | '1000k' | '1500k' | '2500k';
 }
 
 export interface SaveCardResult {
@@ -36,6 +48,7 @@ export interface SaveCardResult {
 
 export interface ElectronAPI {
   ping: () => Promise<string>;
+  getPathForFile?: (file: File) => string;
   checkAnkiConnect: () => Promise<AnkiConnectStatus>;
   getAnkiDecks: () => Promise<string[]>;
   saveCard: (card: CardPayload) => Promise<SaveCardResult>;
@@ -94,6 +107,17 @@ export class ElectronService {
 
   public async ping(): Promise<string> {
     return this.isElectron ? await this.api.ping() : 'mock-pong';
+  }
+
+  public getPathForFile(file: File): string {
+    if (this.isElectron && window.electronAPI?.getPathForFile) {
+      try {
+        return window.electronAPI.getPathForFile(file) || '';
+      } catch {
+        return (file as any).path || '';
+      }
+    }
+    return (file as any).path || '';
   }
 
   public async checkAnkiConnect(): Promise<AnkiConnectStatus> {

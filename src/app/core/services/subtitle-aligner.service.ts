@@ -1,6 +1,13 @@
 import { Injectable } from '@angular/core';
 import { SubtitleTrack, AlignedRow, AlignedCell, SubtitleCue } from '../types/subtitle-project';
 
+export interface AutoAlignOptions {
+  toleranceMs?: number;
+  groupByCounterpart?: boolean;
+  joinSentences?: boolean;
+  excludeNoCounterpart?: boolean;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -8,30 +15,166 @@ export class SubtitleAlignerService {
 
   /**
    * Alinha automaticamente as faixas secundárias em relação à faixa 1 (Base).
+   * Suporta agrupamento N:1 pelo par secundário (padrão subs2srs), junção por continuação e filtragem.
    * @param tracks Lista de faixas carregadas
-   * @param toleranceMs Tolerância máxima em ms para vincular falas próximas (padrão: 500ms)
+   * @param toleranceOrOptions Tolerância máxima em ms ou objeto de opções AutoAlignOptions
+   * @param legacyOptions Opções adicionais se tolerance for passado como número
    */
-  public autoAlignTracks(tracks: SubtitleTrack[], toleranceMs: number = 500): AlignedRow[] {
+  public autoAlignTracks(
+    tracks: SubtitleTrack[],
+    toleranceOrOptions: number | AutoAlignOptions = 500,
+    legacyOptions?: AutoAlignOptions
+  ): AlignedRow[] {
     if (!tracks || tracks.length === 0) return [];
+
+    let options: AutoAlignOptions = {};
+    if (typeof toleranceOrOptions === 'number') {
+      options = { toleranceMs: toleranceOrOptions, ...legacyOptions };
+    } else if (toleranceOrOptions && typeof toleranceOrOptions === 'object') {
+      options = toleranceOrOptions;
+    }
+
+    const tolerance = options.toleranceMs ?? 500;
+    const groupByCounterpart = options.groupByCounterpart !== false; // Padrão subs2srs: true
+    const joinSentences = options.joinSentences !== false; // Padrão subs2srs: true
+    const excludeNoCounterpart = options.excludeNoCounterpart === true;
 
     const baseTrack = tracks[0];
     const otherTracks = tracks.slice(1);
 
-    const rows: AlignedRow[] = [];
+    // Clona as falas da faixa base
+    let baseCues: Array<{
+      id: string;
+      originalIndex: number;
+      startMs: number;
+      endMs: number;
+      origStartMs: number;
+      origEndMs: number;
+      text: string;
+      cueIds: string[];
+    }> = baseTrack.cues.map(c => ({
+      ...c,
+      cueIds: [c.id]
+    }));
 
-    // Cada cue da faixa base gera uma linha inicial
-    baseTrack.cues.forEach((baseCue: SubtitleCue, idx: number) => {
+    if (baseCues.length === 0) return [];
+
+    // Etapa 1: Junção por continuação de pontuação (subs2srs: default_join_sentences_subs1 = True)
+    if (joinSentences && baseCues.length > 1) {
+      const joined: typeof baseCues = [];
+      let current = { ...baseCues[0], cueIds: [...baseCues[0].cueIds] };
+
+      for (let i = 1; i < baseCues.length; i++) {
+        const next = baseCues[i];
+        const endsWithContinuation = /[,、→…]$|\.{3}$/.test(current.text.trim());
+        const gap = next.startMs - current.endMs;
+
+        // Se termina com vírgula ou pontuação de continuação e a próxima começa em até 1200ms
+        if (endsWithContinuation && gap >= -500 && gap <= 1200) {
+          current.endMs = Math.max(current.endMs, next.endMs);
+          current.origEndMs = Math.max(current.origEndMs, next.origEndMs);
+          current.text = `${current.text} ${next.text}`;
+          current.cueIds.push(...next.cueIds);
+        } else {
+          joined.push(current);
+          current = { ...next, cueIds: [...next.cueIds] };
+        }
+      }
+      joined.push(current);
+      baseCues = joined;
+    }
+
+    // Etapa 2: Agrupamento N:1 pela legenda secundária (Subs2 / Counterpart)
+    // Quando múltiplas falas consecutivas da base correspondem à mesma frase da legenda traduzida
+    if (groupByCounterpart && otherTracks.length > 0) {
+      const cpTrack = otherTracks[0];
+      const cpOffset = cpTrack.offsetMs || 0;
+      const baseOffset = baseTrack.offsetMs || 0;
+
+      const findBestCounterpartCueId = (bCue: typeof baseCues[0]): string | null => {
+        const bStart = bCue.startMs + baseOffset;
+        const bEnd = bCue.endMs + baseOffset;
+        let bestCpId: string | null = null;
+        let maxOverlap = 0;
+
+        for (const cp of cpTrack.cues) {
+          const cpStart = cp.startMs + cpOffset;
+          const cpEnd = cp.endMs + cpOffset;
+
+          const overlapStart = Math.max(bStart, cpStart);
+          const overlapEnd = Math.min(bEnd, cpEnd);
+          const overlap = overlapEnd - overlapStart;
+
+          if (overlap > maxOverlap) {
+            maxOverlap = overlap;
+            bestCpId = cp.id;
+          }
+        }
+
+        // Se houve sobreposição real substancial (>= 80ms)
+        if (maxOverlap >= 80) {
+          return bestCpId;
+        }
+
+        // Se não houve sobreposição estrita, verificar ponto médio
+        const bMid = (bStart + bEnd) / 2;
+        for (const cp of cpTrack.cues) {
+          const cpStart = cp.startMs + cpOffset;
+          const cpEnd = cp.endMs + cpOffset;
+          if (bMid >= cpStart - 250 && bMid <= cpEnd + 250) {
+            return cp.id;
+          }
+        }
+
+        return null;
+      };
+
+      const groupedBaseCues: typeof baseCues = [];
+      let curGroup = { ...baseCues[0], cueIds: [...baseCues[0].cueIds] };
+      let curCpId = findBestCounterpartCueId(baseCues[0]);
+
+      for (let i = 1; i < baseCues.length; i++) {
+        const nextCue = baseCues[i];
+        const nextCpId = findBestCounterpartCueId(nextCue);
+        const gap = nextCue.startMs - curGroup.endMs;
+
+        // Se ambos pertencem à mesma cue da legenda secundária e o intervalo não é gigantesco (<= 2500ms)
+        if (curCpId !== null && nextCpId !== null && curCpId === nextCpId && gap <= 2500) {
+          curGroup.endMs = Math.max(curGroup.endMs, nextCue.endMs);
+          curGroup.origEndMs = Math.max(curGroup.origEndMs, nextCue.origEndMs);
+          curGroup.text = `${curGroup.text} ${nextCue.text}`;
+          curGroup.cueIds.push(...nextCue.cueIds);
+        } else {
+          groupedBaseCues.push(curGroup);
+          curGroup = { ...nextCue, cueIds: [...nextCue.cueIds] };
+          curCpId = nextCpId;
+        }
+      }
+      groupedBaseCues.push(curGroup);
+      baseCues = groupedBaseCues;
+    }
+
+    // Etapa 3: Criar linhas iniciais a partir da base (já agrupada)
+    const rows: AlignedRow[] = [];
+    baseCues.forEach((baseCue, idx) => {
+      const matchedCues = baseTrack.cues.filter(c => baseCue.cueIds.includes(c.id));
+      const firstWithImage = matchedCues.find(c => c.imageFileName || c.customImagePath);
+      const firstWithAudio = matchedCues.find(c => c.audioFileName || c.customAudioPath);
+
       const cells: Record<string, AlignedCell | null> = {
         [baseTrack.id]: {
           trackId: baseTrack.id,
-          cueIds: [baseCue.id],
+          cueIds: baseCue.cueIds,
           startMs: baseCue.startMs,
           endMs: baseCue.endMs,
-          text: baseCue.text
+          text: baseCue.text,
+          imageFileName: firstWithImage?.imageFileName,
+          customImagePath: firstWithImage?.customImagePath,
+          audioFileName: firstWithAudio?.audioFileName,
+          customAudioPath: firstWithAudio?.customAudioPath
         }
       };
 
-      // Inicializa as outras colunas como null
       otherTracks.forEach(t => {
         cells[t.id] = null;
       });
@@ -44,13 +187,18 @@ export class SubtitleAlignerService {
       });
     });
 
-    // Mapeia cues de cada outra faixa buscando a linha com melhor sobreposição temporal
+    // Etapa 4: Alinhar cada outra faixa secundária (suporta 1:M com junção por espaço)
     otherTracks.forEach(track => {
       const trackOffset = track.offsetMs || 0;
+      const baseOffset = baseTrack.offsetMs || 0;
 
-      track.cues.forEach((cue: SubtitleCue) => {
+      // Mapeamento de rowIndex -> SubtitleCue[]
+      const rowAssignedCues = new Map<number, SubtitleCue[]>();
+
+      track.cues.forEach(cue => {
         const cueStart = cue.startMs + trackOffset;
         const cueEnd = cue.endMs + trackOffset;
+        const cueMid = (cueStart + cueEnd) / 2;
 
         let bestRowIndex = -1;
         let maxOverlap = 0;
@@ -60,8 +208,8 @@ export class SubtitleAlignerService {
           const baseCell = rows[r].cells[baseTrack.id];
           if (!baseCell) continue;
 
-          const baseStart = baseCell.startMs + (baseTrack.offsetMs || 0);
-          const baseEnd = baseCell.endMs + (baseTrack.offsetMs || 0);
+          const baseStart = baseCell.startMs + baseOffset;
+          const baseEnd = baseCell.endMs + baseOffset;
 
           const overlapStart = Math.max(cueStart, baseStart);
           const overlapEnd = Math.min(cueEnd, baseEnd);
@@ -72,14 +220,13 @@ export class SubtitleAlignerService {
             bestRowIndex = r;
           }
 
-          // Se não há sobreposição estrita, calcula proximidade com base na tolerância
           if (maxOverlap <= 0) {
             const dist = Math.min(
               Math.abs(cueStart - baseStart),
               Math.abs(cueEnd - baseEnd),
-              Math.abs((cueStart + cueEnd) / 2 - (baseStart + baseEnd) / 2)
+              Math.abs(cueMid - (baseStart + baseEnd) / 2)
             );
-            if (dist <= toleranceMs && dist < closestDist) {
+            if (dist <= tolerance && dist < closestDist) {
               closestDist = dist;
               bestRowIndex = r;
             }
@@ -87,26 +234,46 @@ export class SubtitleAlignerService {
         }
 
         if (bestRowIndex !== -1) {
-          const currentCell = rows[bestRowIndex].cells[track.id];
-
-          if (!currentCell) {
-            rows[bestRowIndex].cells[track.id] = {
-              trackId: track.id,
-              cueIds: [cue.id],
-              startMs: cue.startMs,
-              endMs: cue.endMs,
-              text: cue.text
-            };
-          } else {
-            // Concatena na célula existente se múltiplos cues caírem na mesma fala
-            currentCell.cueIds.push(cue.id);
-            currentCell.startMs = Math.min(currentCell.startMs, cue.startMs);
-            currentCell.endMs = Math.max(currentCell.endMs, cue.endMs);
-            currentCell.text += '\n' + cue.text;
+          if (!rowAssignedCues.has(bestRowIndex)) {
+            rowAssignedCues.set(bestRowIndex, []);
           }
+          rowAssignedCues.get(bestRowIndex)!.push(cue);
         }
       });
+
+      // Atribui os dados agrupados à célula da linha
+      rowAssignedCues.forEach((cuesList, rIdx) => {
+        cuesList.sort((a, b) => a.startMs - b.startMs);
+        const startMs = Math.min(...cuesList.map(c => c.startMs));
+        const endMs = Math.max(...cuesList.map(c => c.endMs));
+        const text = cuesList.map(c => c.text).join(' ');
+        const cueIds = cuesList.map(c => c.id);
+        const firstWithImage = cuesList.find(c => c.imageFileName || c.customImagePath);
+        const firstWithAudio = cuesList.find(c => c.audioFileName || c.customAudioPath);
+
+        rows[rIdx].cells[track.id] = {
+          trackId: track.id,
+          cueIds,
+          startMs,
+          endMs,
+          text,
+          imageFileName: firstWithImage?.imageFileName,
+          customImagePath: firstWithImage?.customImagePath,
+          audioFileName: firstWithAudio?.audioFileName,
+          customAudioPath: firstWithAudio?.customAudioPath
+        };
+      });
     });
+
+    // Etapa 5: Se excludeNoCounterpart estiver ativo, marca linhas sem par
+    if (excludeNoCounterpart && otherTracks.length > 0) {
+      const primaryTrackId = otherTracks[0].id;
+      rows.forEach(r => {
+        if (!r.cells[primaryTrackId] || !r.cells[primaryTrackId]?.text.trim()) {
+          r.excluded = true;
+        }
+      });
+    }
 
     return rows;
   }
@@ -141,6 +308,56 @@ export class SubtitleAlignerService {
       }
       updated[updated.length - 1].cells = { ...updated[updated.length - 1].cells, [trackId]: null };
     }
+    return updated;
+  }
+
+  /**
+   * Move em bloco a célula a partir de fromIndex até o fim da coluna para toIndex,
+   * deslocando todas as células subsequentes dessa coluna juntas (para cima ou para baixo).
+   */
+  public moveBlockToRow(rows: AlignedRow[], trackId: string, fromIndex: number, toIndex: number): AlignedRow[] {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return rows;
+    const updated = rows.map(r => ({ ...r, cells: { ...r.cells } }));
+
+    // Extrai todas as células da coluna a partir de fromIndex
+    const blockCells: (AlignedCell | null)[] = [];
+    for (let i = fromIndex; i < updated.length; i++) {
+      blockCells.push(updated[i].cells[trackId] || null);
+      updated[i].cells[trackId] = null;
+    }
+
+    // Insere o bloco a partir de toIndex
+    for (let i = 0; i < blockCells.length; i++) {
+      const targetRowIdx = toIndex + i;
+      const cell = blockCells[i];
+      if (targetRowIdx < updated.length) {
+        updated[targetRowIdx].cells[trackId] = cell;
+      } else if (cell) {
+        updated.push({
+          id: `row_extra_${Date.now()}_${i}`,
+          index: updated.length + 1,
+          cells: { [trackId]: cell },
+          excluded: false
+        });
+      }
+    }
+
+    if (toIndex < fromIndex) {
+      // Garante que posições liberadas no final fiquem limpas
+      for (let i = toIndex + blockCells.length; i < updated.length; i++) {
+        updated[i].cells[trackId] = null;
+      }
+
+      // Remove linhas extras no final que estejam totalmente vazias
+      while (
+        updated.length > 0 &&
+        Object.values(updated[updated.length - 1].cells).every(c => !c || !c.text?.trim())
+      ) {
+        updated.pop();
+      }
+    }
+
+    updated.forEach((r, idx) => (r.index = idx + 1));
     return updated;
   }
 
@@ -183,7 +400,7 @@ export class SubtitleAlignerService {
       cueIds: [...current.cueIds, ...next.cueIds],
       startMs: Math.min(current.startMs, next.startMs),
       endMs: Math.max(current.endMs, next.endMs),
-      text: `${current.text}\n${next.text}`
+      text: `${current.text} ${next.text}`
     };
 
     updated[rowIndex].cells = { ...updated[rowIndex].cells, [trackId]: merged };
@@ -214,7 +431,7 @@ export class SubtitleAlignerService {
       cueIds: [...prev.cueIds, ...current.cueIds],
       startMs: Math.min(prev.startMs, current.startMs),
       endMs: Math.max(prev.endMs, current.endMs),
-      text: `${prev.text}\n${current.text}`
+      text: `${prev.text} ${current.text}`
     };
 
     updated[rowIndex - 1].cells = { ...updated[rowIndex - 1].cells, [trackId]: merged };

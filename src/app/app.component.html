@@ -710,14 +710,14 @@
 
   <!-- ================= SETTINGS MODAL ================= -->
   <div *ngIf="isSettingsOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
-    <div class="glass-panel bg-slate-900 rounded-2xl w-full max-w-xl p-6 shadow-2xl border border-slate-700 space-y-4">
+    <div class="glass-panel bg-slate-900 rounded-2xl w-full max-w-xl p-6 shadow-2xl border border-slate-700 space-y-4 max-h-[90vh] overflow-y-auto">
 
       <div class="flex items-center justify-between border-b border-slate-800 pb-3">
         <h2 class="text-sm font-bold text-white flex items-center gap-2">
           <svg class="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
           </svg>
-          Configurações de Exportação e Anki
+          Configurações de Exportação e Mídia
         </h2>
         <button (click)="isSettingsOpen = false" class="text-slate-400 hover:text-white">✕</button>
       </div>
@@ -760,6 +760,123 @@
             <span class="text-xs font-bold">📁 Arquivo TSV</span>
             <span class="text-[10px] opacity-80 mt-1">Apenas grava no .txt</span>
           </label>
+        </div>
+      </div>
+
+      <!-- Configurações de Áudio -->
+      <div class="p-3.5 bg-slate-800/50 rounded-xl border border-slate-700/80 space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+            </svg>
+            Configurações de Áudio
+          </span>
+          <span class="text-[10px] text-slate-400">Extração de áudio dos cards</span>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-300 mb-1">Formato de Saída</label>
+            <select [(ngModel)]="settings.audioFormat"
+                    class="w-full glass-input px-3 py-1.5 rounded-lg text-xs bg-slate-900 border border-slate-700 text-slate-200">
+              <option value="mp3">MP3 (.mp3)</option>
+              <option value="aac">AAC (.aac)</option>
+              <option value="ogg">OGG (.ogg)</option>
+              <option value="opus">Opus (.opus)</option>
+              <option value="wav">WAV (.wav)</option>
+              <option value="flac">FLAC (.flac)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-300 mb-1">Bitrate de Áudio</label>
+            <select [(ngModel)]="settings.audioBitrate"
+                    class="w-full glass-input px-3 py-1.5 rounded-lg text-xs bg-slate-900 border border-slate-700 text-slate-200">
+              <option value="64k">64 kbps (Muito leve)</option>
+              <option value="96k">96 kbps (Leve)</option>
+              <option value="128k">128 kbps (Padrão recomendado)</option>
+              <option value="160k">160 kbps</option>
+              <option value="192k">192 kbps (Alta qualidade)</option>
+              <option value="256k">256 kbps</option>
+              <option value="320k">320 kbps (Máxima fidelidade)</option>
+            </select>
+          </div>
+        </div>
+        <div class="space-y-1.5 pt-1">
+          <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+            <input type="checkbox" [(ngModel)]="settings.normalizeAudio"
+                   class="rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-0">
+            <span>Normalizar volume do áudio (EBU R128 loudness)</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+            <input type="checkbox" [(ngModel)]="settings.trimSilence"
+                   class="rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-0">
+            <span>Remover silêncio no início e final do corte</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Configurações de Imagem (Snapshot) -->
+      <div class="p-3.5 bg-slate-800/50 rounded-xl border border-slate-700/80 space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            Configurações de Imagem (Snapshot)
+          </span>
+          <span class="text-[10px] text-amber-400/90 font-medium">Mantém a proporção do vídeo</span>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-300 mb-1">Largura Máx. (px)</label>
+            <input type="number" [(ngModel)]="settings.imageWidth" min="160" max="1920" step="10"
+                   class="w-full glass-input px-3 py-1.5 rounded-lg text-xs bg-slate-900 border border-slate-700 text-slate-200" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-300 mb-1">Altura Máx. (px)</label>
+            <input type="number" [(ngModel)]="settings.imageHeight" min="90" max="1080" step="10"
+                   class="w-full glass-input px-3 py-1.5 rounded-lg text-xs bg-slate-900 border border-slate-700 text-slate-200" />
+          </div>
+        </div>
+        <p class="text-[10.5px] text-slate-400">
+          A imagem é redimensionada para caber no limite definido sem distorção e sem barras pretas.
+        </p>
+      </div>
+
+      <!-- Configurações de Vídeo (Clipes) -->
+      <div class="p-3.5 bg-slate-800/50 rounded-xl border border-slate-700/80 space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            Configurações de Vídeo (Clipes)
+          </span>
+          <span class="text-[10px] text-amber-400/90 font-medium">Mantém a proporção do vídeo</span>
+        </div>
+        <div class="grid grid-cols-3 gap-2.5">
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-300 mb-1">Largura Máx.</label>
+            <input type="number" [(ngModel)]="settings.videoWidth" min="240" max="1920" step="20"
+                   class="w-full glass-input px-2.5 py-1.5 rounded-lg text-xs bg-slate-900 border border-slate-700 text-slate-200" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-300 mb-1">Altura Máx.</label>
+            <input type="number" [(ngModel)]="settings.videoHeight" min="140" max="1080" step="20"
+                   class="w-full glass-input px-2.5 py-1.5 rounded-lg text-xs bg-slate-900 border border-slate-700 text-slate-200" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-300 mb-1">Bitrate de Vídeo</label>
+            <select [(ngModel)]="settings.videoBitrate"
+                    class="w-full glass-input px-2.5 py-1.5 rounded-lg text-xs bg-slate-900 border border-slate-700 text-slate-200">
+              <option value="500k">500 kbps (Leve)</option>
+              <option value="800k">800 kbps (Recomendado)</option>
+              <option value="1000k">1000 kbps</option>
+              <option value="1500k">1500 kbps (Médio)</option>
+              <option value="2000k">2000 kbps</option>
+              <option value="2500k">2500 kbps (Alto)</option>
+            </select>
+          </div>
         </div>
       </div>
 

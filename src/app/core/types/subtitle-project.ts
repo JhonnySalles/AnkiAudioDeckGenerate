@@ -10,7 +10,11 @@ export const SUPPORTED_AUDIO_EXTENSIONS = [
 ];
 
 export const SUPPORTED_SUBTITLE_EXTENSIONS = [
-  'srt', 'ass', 'ssa', 'vtt', 'sub', 'sbv', 'lrc', 'txt'
+  'srt', 'ass', 'ssa', 'vtt', 'sub', 'sbv', 'lrc', 'txt', 'csv'
+];
+
+export const SUPPORTED_IMAGE_EXTENSIONS = [
+  'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'
 ];
 
 export interface MediaAudioStream {
@@ -55,6 +59,10 @@ export interface SubtitleCue {
   origStartMs: number;
   origEndMs: number;
   text: string;
+  audioFileName?: string;
+  imageFileName?: string;
+  customImagePath?: string;
+  customAudioPath?: string;
 }
 
 export interface SubtitleTrack {
@@ -77,6 +85,8 @@ export interface AlignedCell {
   text: string;
   audioFileName?: string;
   imageFileName?: string;
+  customImagePath?: string;
+  customAudioPath?: string;
 }
 
 export interface AlignedRow {
@@ -92,10 +102,11 @@ export interface OutputColumnConfig {
 }
 
 export interface OutputConfig {
-  separator: string;              // "\t", ",", ";", "|"
+  separator: string;              // "\t", ",", ";", "|", "csv", "sql"
   quoteMode: 'none' | 'always' | 'when-needed';
-  linePrefix?: string;            // Ex: "("
-  lineSuffix?: string;            // Ex: ")"
+  linePrefix?: string;
+  lineSuffix?: string;
+  sqlTableName?: string;
   writeAnkiHeaders: boolean;      // #separator:tab, #html:true
   columns: string[];              // lista ordenada de identificadores de coluna
   tags: string[];
@@ -110,9 +121,17 @@ export interface SubtitleExportOptions {
   mediaOutputDir?: string;
   generateAudio: boolean;
   generateImages: boolean;
+  generateVideos?: boolean;
   copyToAnkiCollectionMedia: boolean;
   trimSilence?: boolean;
   normalizeAudio?: boolean;
+  audioBitrate?: string;
+  audioFormat?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  videoWidth?: number;
+  videoHeight?: number;
+  videoBitrate?: string;
 }
 
 export interface SubtitleExportProgress {
@@ -133,6 +152,9 @@ export interface SubtitleProject {
   output: OutputConfig;
   projectFilePath?: string;       // Caminho persistido onde o arquivo .ankisubs.json foi salvo
   alignmentToleranceMs?: number;  // Tolerância de sincronização entre faixas (padrão: 500ms)
+  groupByCounterpart?: boolean;   // Agrupar falas consecutivas da base pela legenda secundária (padrão: true)
+  removeStyledLines?: boolean;    // Filtrar créditos (STAFF), músicas (OP/ED) e placas em legendas .ass (padrão: true)
+  excludeNoCounterpart?: boolean; // Marcar como excluídas linhas que não possuem tradução (padrão: false)
 }
 
 export interface CutAudioOptions {
@@ -143,6 +165,8 @@ export interface CutAudioOptions {
   outputPath: string;
   trimSilence?: boolean;
   normalizeAudio?: boolean;
+  bitrate?: string;
+  format?: string;
 }
 
 export interface ExtractSnapshotOptions {
@@ -150,5 +174,17 @@ export interface ExtractSnapshotOptions {
   atMs: number;
   outputPath: string;
   width?: number;
+  height?: number;
+}
+
+export interface CutVideoOptions {
+  sourcePath: string;
+  audioStreamIndex?: number;
+  startMs: number;
+  endMs: number;
+  outputPath: string;
+  width?: number;
+  height?: number;
+  bitrate?: string;
 }
 

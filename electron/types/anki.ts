@@ -21,6 +21,18 @@ export interface AppSettings {
   exportTxtPath: string;
   ankiConnectUrl: string;
   saveMode: 'both' | 'ankiconnect' | 'file';
+  // Áudio
+  audioBitrate?: '64k' | '96k' | '128k' | '192k' | '256k' | '320k';
+  audioFormat?: 'mp3' | 'aac' | 'ogg' | 'opus' | 'wav' | 'flac';
+  normalizeAudio?: boolean;
+  trimSilence?: boolean;
+  // Imagem
+  imageWidth?: number;
+  imageHeight?: number;
+  // Vídeo
+  videoWidth?: number;
+  videoHeight?: number;
+  videoBitrate?: '500k' | '800k' | '1000k' | '1500k' | '2500k';
 }
 
 export interface SaveCardResult {

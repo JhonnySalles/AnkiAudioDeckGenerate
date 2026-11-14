@@ -1,6 +1,32 @@
 import { Injectable } from '@angular/core';
 import { SubtitleCue } from '../types/subtitle-project';
 
+export interface SubtitleParseOptions {
+  removeStyledLines?: boolean;
+}
+
+export type AnkiColumnType = 'ignore' | 'id' | 'text' | 'image' | 'audio';
+export type AnkiColumnAction = 'new_track' | 'combine';
+
+export interface AnkiColumnMapping {
+  index: number;
+  sampleValues: string[];
+  type: AnkiColumnType;
+  action: AnkiColumnAction;
+  targetTrackLabel?: string;
+  combineWithTrackIndex?: number;
+}
+
+export interface AnkiParseResult {
+  fileName: string;
+  separator: string;
+  episodeName?: string;
+  totalRows: number;
+  columnsCount: number;
+  rawRows: string[][];
+  suggestedMappings: AnkiColumnMapping[];
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -84,10 +110,10 @@ export class SubtitleParserService {
     return `${hStr}:${mStr}:${sStr}`;
   }
 
-  public parseSubtitle(content: string, fileName: string = ''): SubtitleCue[] {
+  public parseSubtitle(content: string, fileName: string = '', options?: SubtitleParseOptions): SubtitleCue[] {
     const ext = fileName.toLowerCase();
     if (ext.endsWith('.ass') || ext.endsWith('.ssa') || content.includes('[Events]') || content.includes('Dialogue:')) {
-      return this.parseAss(content);
+      return this.parseAss(content, options);
     }
     if (ext.endsWith('.sbv') || /^\d+:\d{2}:\d{2}\.\d{3},\d+:\d{2}:\d{2}\.\d{3}/m.test(content)) {
       return this.parseSbv(content);
@@ -98,7 +124,7 @@ export class SubtitleParserService {
     if (ext.endsWith('.lrc') || /^\[\d{2}:\d{2}/m.test(content)) {
       return this.parseLrc(content);
     }
-    return this.parseSrt(content);
+    return this.parseSrt(content, options);
   }
 
   // Parser de YouTube (.sbv)
@@ -217,7 +243,8 @@ export class SubtitleParserService {
   }
 
   // Parser de SRT e VTT
-  public parseSrt(content: string): SubtitleCue[] {
+  public parseSrt(content: string, options?: SubtitleParseOptions): SubtitleCue[] {
+    const removeStyled = options?.removeStyledLines !== false;
     const cleanContent = content.replace(/^WEBVTT.*(\r?\n)+/i, '');
     const blocks = cleanContent.split(/(?:\r?\n){2,}/);
     const cues: SubtitleCue[] = [];
@@ -245,7 +272,18 @@ export class SubtitleParserService {
         const endMs = this.timeToMs(match[2]);
 
         const textLines = lines.slice(timeLineIdx + 1);
-        const rawText = textLines.join('\n').replace(/<[^>]+>/g, '').trim();
+        const rawText = textLines
+          .join(' ')
+          .replace(/<[^>]+>/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (removeStyled) {
+          // Ignora créditos de fansub comuns em arquivos SRT
+          if (/^(\[staff\]|staff:|\(staff\)|fansub|traduzido por|legendado por)/i.test(rawText)) {
+            continue;
+          }
+        }
 
         if (rawText && startMs !== null && endMs !== null) {
           cues.push({
@@ -264,8 +302,9 @@ export class SubtitleParserService {
     return cues;
   }
 
-  // Parser de ASS/SSA
-  public parseAss(content: string): SubtitleCue[] {
+  // Parser de ASS/SSA com filtragem de linhas estilizadas (RemoveStyledLines)
+  public parseAss(content: string, options?: SubtitleParseOptions): SubtitleCue[] {
+    const removeStyled = options?.removeStyledLines !== false;
     const lines = content.split(/\r?\n/);
     const cues: SubtitleCue[] = [];
     let inEvents = false;
@@ -323,20 +362,41 @@ export class SubtitleParserService {
 
           const startStr = values[startIdx];
           const endStr = values[endIdx];
-          const style = values[styleIdx] || '';
-          let text = values[textIdx] || '';
+          const style = (values[styleIdx] || '').trim();
+          let rawText = values[textIdx] || '';
 
-          // Filtrar estilos comuns de Signs ou Abertura se necessário
-          if (/^(sign|title|note)/i.test(style)) {
-            // Pode ignorar se for somente placa, mas mantemos como padrão
+          if (removeStyled) {
+            const normalizedStyle = style.toLowerCase();
+
+            // Filtrar estilos de não-diálogo: Staff, Créditos, OP/ED, Músicas, Placas, Títulos
+            const isNonDialogueStyle = /^(staff|credit|credits|op|ed|op[-_].*|ed[-_].*|.*[-_]op|.*[-_]ed|song|songs|kara|karaoke|lyrics|romaji|sign|signs|title|gamen|note|notes|screen|caption|eyecatch|next|preview|insert)/i.test(normalizedStyle);
+            if (isNonDialogueStyle) {
+              continue;
+            }
+
+            // Em arquivos de fansub bilíngues (ex: Kamigami), filtrar faixas chinesas
+            if (/^(sub[-_]cn|sub[-_]cnup|op[-_]cn|ed[-_]cn)/i.test(normalizedStyle)) {
+              continue;
+            }
+
+            // Ignorar comandos de desenho vetorial (ex: {\p1}...)
+            if (/\{\\p[1-9]\}/i.test(rawText)) {
+              continue;
+            }
+
+            // Ignorar placas posicionadas na tela com \pos ou \move na primeira tag de estilo
+            if (/^\{[^}]*\\(pos|move|org|fad)\(/i.test(rawText)) {
+              continue;
+            }
           }
 
-          // Limpar tags de estilo {\...} e quebras \N
-          text = text
+          // Limpar tags de estilo {\...} e normalizar quebras de linha para espaço simples (padrão subs2srs)
+          const text = rawText
             .replace(/\{[^}]+\}/g, '')
-            .replace(/\\N/gi, '\n')
+            .replace(/\\N/gi, ' ')
             .replace(/\\n/gi, ' ')
             .replace(/\\h/gi, ' ')
+            .replace(/\s+/g, ' ')
             .trim();
 
           const startMs = this.timeToMs(startStr);
@@ -360,6 +420,452 @@ export class SubtitleParserService {
     // Ordenar por tempo inicial
     cues.sort((a, b) => a.startMs - b.startMs);
     return cues;
+  }
+
+  // =========================================================================
+  // PARSER DE ARQUIVOS TABULARES / EXPORTAÇÃO DO ANKI (CSV, TSV, TXT)
+  // =========================================================================
+
+  public isAnkiOrTabularContent(content: string, fileName: string = ''): boolean {
+    const ext = fileName.toLowerCase();
+    if (ext.endsWith('.csv')) return true;
+    if (content.startsWith('#separator:') || content.includes('#separator:tab') || content.includes('#separator:comma') || content.includes('#separator:semicolon')) {
+      return true;
+    }
+    // Se tiver '-->', é muito provavelmente um SRT ou WebVTT tradicional
+    if (content.includes('-->')) return false;
+
+    // Verificar consistência de delimitadores nas primeiras linhas
+    const lines = content.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('#')).slice(0, 5);
+    if (lines.length >= 2) {
+      for (const sep of [';', '\t', '|', ',']) {
+        const counts = lines.map(l => this.parseDelimitedRow(l, sep).length);
+        if (counts[0] > 1 && counts.every(c => c === counts[0])) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  public detectAnkiSeparator(content: string): string {
+    const headerMatch = content.match(/^#separator:(.+)$/m);
+    if (headerMatch) {
+      const val = headerMatch[1].trim().toLowerCase();
+      if (val === 'tab') return '\t';
+      if (val === 'comma' || val === ',') return ',';
+      if (val === 'semicolon' || val === ';') return ';';
+      if (val === 'pipe' || val === '|') return '|';
+      if (headerMatch[1].trim()) return headerMatch[1].trim();
+    }
+
+    const lines = content.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('#')).slice(0, 10);
+    if (lines.length === 0) return ';';
+
+    const candidates = [';', '\t', '|', ','];
+    let bestSep = ';';
+    let maxConsistency = -1;
+
+    for (const sep of candidates) {
+      const counts = lines.map(l => this.parseDelimitedRow(l, sep).length);
+      const isConsistent = counts.every(c => c === counts[0]);
+      const avgCols = counts[0] || 0;
+      if (isConsistent && avgCols > 1 && avgCols > maxConsistency) {
+        maxConsistency = avgCols;
+        bestSep = sep;
+      }
+    }
+
+    return bestSep;
+  }
+
+  public parseDelimitedRow(line: string, separator: string): string[] {
+    const cells: string[] = [];
+    let current = '';
+    let inQuote = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuote) {
+        if (ch === '"') {
+          if (i + 1 < line.length && line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuote = false;
+          }
+        } else {
+          current += ch;
+        }
+      } else {
+        if (ch === '"') {
+          inQuote = true;
+        } else if (ch === separator) {
+          cells.push(current.trim());
+          current = '';
+        } else {
+          current += ch;
+        }
+      }
+    }
+    cells.push(current.trim());
+    return cells;
+  }
+
+  public parseDelimitedRows(content: string, separator: string): string[][] {
+    const rows: string[][] = [];
+    let currentRow: string[] = [];
+    let currentField = '';
+    let inQuote = false;
+
+    for (let i = 0; i < content.length; i++) {
+      const ch = content[i];
+
+      if (inQuote) {
+        if (ch === '"') {
+          if (i + 1 < content.length && content[i + 1] === '"') {
+            currentField += '"';
+            i++;
+          } else {
+            inQuote = false;
+          }
+        } else {
+          currentField += ch;
+        }
+      } else {
+        if (ch === '"') {
+          inQuote = true;
+        } else if (ch === separator) {
+          currentRow.push(currentField.trim());
+          currentField = '';
+        } else if (ch === '\r') {
+          if (i + 1 < content.length && content[i + 1] === '\n') {
+            i++;
+          }
+          currentRow.push(currentField.trim());
+          if (currentRow.some(c => c.length > 0)) {
+            rows.push(currentRow);
+          }
+          currentRow = [];
+          currentField = '';
+        } else if (ch === '\n') {
+          currentRow.push(currentField.trim());
+          if (currentRow.some(c => c.length > 0)) {
+            rows.push(currentRow);
+          }
+          currentRow = [];
+          currentField = '';
+        } else {
+          currentField += ch;
+        }
+      }
+    }
+
+    if (currentField.length > 0 || currentRow.length > 0) {
+      currentRow.push(currentField.trim());
+      if (currentRow.some(c => c.length > 0)) {
+        rows.push(currentRow);
+      }
+    }
+
+    // Filtrar linhas de cabeçalho que começam com #
+    return rows.filter(r => !(r.length === 1 && r[0].startsWith('#')) && !(r[0] && r[0].startsWith('#separator:')));
+  }
+
+  public parseAnkiDelimitedContent(content: string, fileName: string = ''): AnkiParseResult {
+    const separator = this.detectAnkiSeparator(content);
+    const rawRows = this.parseDelimitedRows(content, separator);
+
+    let columnsCount = 0;
+    for (const r of rawRows) {
+      if (r.length > columnsCount) columnsCount = r.length;
+    }
+
+    // Normalizar todas as linhas para columnsCount
+    for (const r of rawRows) {
+      while (r.length < columnsCount) {
+        r.push('');
+      }
+    }
+
+    // Analisar cada coluna para determinar tipo provável e amostras
+    const sampleRows = rawRows.slice(0, 15);
+    const mappings: AnkiColumnMapping[] = [];
+
+    let foundFirstId = false;
+    let foundFirstText = false;
+    let foundFirstImage = false;
+    let foundFirstAudio = false;
+    let extractedEpisodeName: string | undefined = undefined;
+
+    for (let colIdx = 0; colIdx < columnsCount; colIdx++) {
+      const samples = sampleRows.map(r => r[colIdx] || '').filter(v => v.trim().length > 0);
+      const displaySamples = samples.slice(0, 3);
+
+      let detectedType: AnkiColumnType = 'text';
+
+      if (samples.length === 0) {
+        detectedType = 'ignore';
+      } else {
+        // Testar ID / Tempo
+        const idMatches = samples.filter(s => {
+          return /-\s*\d{1,2}:\d{2}:\d{2}/.test(s) || /^\d{1,2}:\d{2}:\d{2}/.test(s);
+        });
+
+        const audioMatches = samples.filter(s => {
+          return /\[sound:[^\]]+\]/i.test(s) || /\.(mp3|wav|ogg|opus|aac|flac|m4a)/i.test(s);
+        });
+
+        const imageMatches = samples.filter(s => {
+          return /<img[^>]+src=/i.test(s) || /\.(jpg|jpeg|png|webp|gif|bmp)/i.test(s);
+        });
+
+        if (idMatches.length >= Math.ceil(samples.length * 0.5)) {
+          detectedType = 'id';
+          if (!extractedEpisodeName) {
+            const firstIdSample = samples[0];
+            const epMatch = firstIdSample.match(/^(.*?)\s*-\s*\d{1,2}:\d{2}:\d{2}/);
+            if (epMatch && epMatch[1].trim()) {
+              extractedEpisodeName = epMatch[1].trim();
+            }
+          }
+        } else if (audioMatches.length >= Math.ceil(samples.length * 0.4)) {
+          detectedType = 'audio';
+        } else if (imageMatches.length >= Math.ceil(samples.length * 0.4)) {
+          detectedType = 'image';
+        } else {
+          detectedType = 'text';
+        }
+      }
+
+      // Regra 2.3: Por padrão apenas a primeira de cada tipo vem marcada
+      let finalType: AnkiColumnType = 'ignore';
+      let action: AnkiColumnAction = 'new_track';
+      let targetTrackLabel = `Faixa ${colIdx + 1}`;
+
+      if (detectedType === 'id' && !foundFirstId) {
+        finalType = 'id';
+        foundFirstId = true;
+      } else if (detectedType === 'text' && !foundFirstText) {
+        finalType = 'text';
+        foundFirstText = true;
+        // Detectar se contém caracteres japoneses (Hiragana, Katakana, Kanji)
+        const hasJp = samples.some(s => /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/.test(s));
+        targetTrackLabel = hasJp ? 'JP' : 'Sub 1';
+      } else if (detectedType === 'image' && !foundFirstImage) {
+        finalType = 'image';
+        foundFirstImage = true;
+        action = 'combine'; // anexa à faixa de texto principal
+      } else if (detectedType === 'audio' && !foundFirstAudio) {
+        finalType = 'audio';
+        foundFirstAudio = true;
+        action = 'combine'; // anexa à faixa de texto principal
+      } else {
+        finalType = 'ignore';
+      }
+
+      mappings.push({
+        index: colIdx,
+        sampleValues: displaySamples,
+        type: finalType,
+        action,
+        targetTrackLabel,
+        combineWithTrackIndex: 0
+      });
+    }
+
+    return {
+      fileName,
+      separator,
+      episodeName: extractedEpisodeName,
+      totalRows: rawRows.length,
+      columnsCount,
+      rawRows,
+      suggestedMappings: mappings
+    };
+  }
+
+  public buildCuesFromAnkiImport(
+    result: AnkiParseResult,
+    mappings: AnkiColumnMapping[]
+  ): { episodeName?: string; tracks: { label: string; cues: SubtitleCue[] }[] } {
+    const rawRows = result.rawRows;
+    const idMapping = mappings.find(m => m.type === 'id');
+    const idColIdx = idMapping ? idMapping.index : -1;
+
+    // 1. Extrair os tempos de cada linha (startMs e endMs)
+    const rowTimings: { startMs: number; endMs: number }[] = [];
+
+    for (let rIdx = 0; rIdx < rawRows.length; rIdx++) {
+      const row = rawRows[rIdx];
+      let startMs: number | null = null;
+      let endMs: number | null = null;
+
+      // Tenta extrair timestamp do ID
+      if (idColIdx !== -1 && row[idColIdx]) {
+        const idText = row[idColIdx];
+        const match = idText.match(/(\d{1,2}:\d{2}:\d{2}(?:\.\d+)?)/);
+        if (match) {
+          startMs = this.timeToMs(match[1]);
+        }
+      }
+
+      // Tenta extrair timestamp de arquivo de áudio se disponível (ex: 0.00.01.000-0.00.03.500)
+      for (const m of mappings) {
+        if (m.type === 'audio' && row[m.index]) {
+          const aText = row[m.index];
+          const rangeMatch = aText.match(/(\d+)\.(\d{2})\.(\d{2})\.(\d{3})-(\d+)\.(\d{2})\.(\d{2})\.(\d{3})/);
+          if (rangeMatch) {
+            const sH = parseInt(rangeMatch[1], 10);
+            const sM = parseInt(rangeMatch[2], 10);
+            const sS = parseInt(rangeMatch[3], 10);
+            const sMs = parseInt(rangeMatch[4], 10);
+            const eH = parseInt(rangeMatch[5], 10);
+            const eM = parseInt(rangeMatch[6], 10);
+            const eS = parseInt(rangeMatch[7], 10);
+            const eMs = parseInt(rangeMatch[8], 10);
+            startMs = sH * 3600000 + sM * 60000 + sS * 1000 + sMs;
+            endMs = eH * 3600000 + eM * 60000 + eS * 1000 + eMs;
+            break;
+          }
+        }
+      }
+
+      if (startMs === null) {
+        startMs = rIdx * 3000;
+      }
+
+      rowTimings.push({ startMs, endMs: endMs || 0 });
+    }
+
+    // Calcular endMs relativo caso não tenha sido preenchido
+    for (let rIdx = 0; rIdx < rowTimings.length; rIdx++) {
+      if (!rowTimings[rIdx].endMs || rowTimings[rIdx].endMs <= rowTimings[rIdx].startMs) {
+        if (rIdx + 1 < rowTimings.length) {
+          const nextStart = rowTimings[rIdx + 1].startMs;
+          if (nextStart > rowTimings[rIdx].startMs) {
+            rowTimings[rIdx].endMs = Math.min(nextStart, rowTimings[rIdx].startMs + 7000);
+          } else {
+            rowTimings[rIdx].endMs = rowTimings[rIdx].startMs + 3000;
+          }
+        } else {
+          rowTimings[rIdx].endMs = rowTimings[rIdx].startMs + 3000;
+        }
+      }
+    }
+
+    // 2. Identificar faixas a criar
+    // Faixas são criadas para:
+    // - Mappings com action === 'new_track' e type === 'text' (ou image/audio se usuário escolheu nova faixa)
+    interface TargetTrackDef {
+      label: string;
+      primaryColIndex: number;
+      combinedColIndices: number[];
+    }
+
+    const targetTracks: TargetTrackDef[] = [];
+
+    // Primeiro mapeia as faixas primárias
+    for (const m of mappings) {
+      if (m.type !== 'ignore' && m.type !== 'id' && m.action === 'new_track') {
+        targetTracks.push({
+          label: m.targetTrackLabel || `Faixa ${m.index + 1}`,
+          primaryColIndex: m.index,
+          combinedColIndices: []
+        });
+      }
+    }
+
+    // Se nenhuma faixa foi criada com new_track, criar uma padrão para não perder dados
+    if (targetTracks.length === 0) {
+      const firstActive = mappings.find(m => m.type !== 'ignore' && m.type !== 'id');
+      targetTracks.push({
+        label: 'Sub 1',
+        primaryColIndex: firstActive ? firstActive.index : 0,
+        combinedColIndices: []
+      });
+    }
+
+    // Mapeia colunas combinadas
+    for (const m of mappings) {
+      if (m.type !== 'ignore' && m.type !== 'id' && m.action === 'combine') {
+        const targetTrack = targetTracks.find(t => t.primaryColIndex === m.combineWithTrackIndex) || targetTracks[0];
+        if (targetTrack && !targetTrack.combinedColIndices.includes(m.index)) {
+          targetTrack.combinedColIndices.push(m.index);
+        }
+      }
+    }
+
+    // 3. Gerar as faixas e cues
+    const createdTracks: { label: string; cues: SubtitleCue[] }[] = [];
+
+    for (let tIdx = 0; tIdx < targetTracks.length; tIdx++) {
+      const def = targetTracks[tIdx];
+      const cues: SubtitleCue[] = [];
+
+      for (let rIdx = 0; rIdx < rawRows.length; rIdx++) {
+        const row = rawRows[rIdx];
+        const timing = rowTimings[rIdx];
+
+        let text = row[def.primaryColIndex] || '';
+        let audioFileName: string | undefined = undefined;
+        let imageFileName: string | undefined = undefined;
+
+        // Limpar tag sound se estiver no texto e extrair audioFileName
+        const soundMatch = text.match(/\[sound:([^\]]+)\]/i);
+        if (soundMatch) {
+          audioFileName = soundMatch[1];
+          text = text.replace(/\[sound:[^\]]+\]/gi, '').trim();
+        }
+
+        // Limpar tag img se estiver no texto e extrair imageFileName
+        const imgMatch = text.match(/<img[^>]+src=["']?([^"'>\s]+)["']?[^>]*>/i);
+        if (imgMatch) {
+          imageFileName = imgMatch[1];
+          text = text.replace(/<img[^>]*>/gi, '').trim();
+        }
+
+        // Processar colunas combinadas
+        for (const cIdx of def.combinedColIndices) {
+          const combVal = row[cIdx] || '';
+          const combMapping = mappings.find(m => m.index === cIdx);
+
+          if (combMapping?.type === 'audio') {
+            const sm = combVal.match(/\[sound:([^\]]+)\]/i);
+            audioFileName = sm ? sm[1] : (combVal.trim() || audioFileName);
+          } else if (combMapping?.type === 'image') {
+            const im = combVal.match(/<img[^>]+src=["']?([^"'>\s]+)["']?[^>]*>/i);
+            imageFileName = im ? im[1] : (combVal.trim() || imageFileName);
+          } else if (combMapping?.type === 'text') {
+            if (combVal.trim()) {
+              text = text ? `${text}<br>${combVal.trim()}` : combVal.trim();
+            }
+          }
+        }
+
+        cues.push({
+          id: `cue_anki_${tIdx + 1}_${rIdx + 1}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          originalIndex: rIdx + 1,
+          startMs: timing.startMs,
+          endMs: timing.endMs,
+          origStartMs: timing.startMs,
+          origEndMs: timing.endMs,
+          text: text.trim(),
+          audioFileName,
+          imageFileName
+        });
+      }
+
+      createdTracks.push({
+        label: def.label,
+        cues
+      });
+    }
+
+    return {
+      episodeName: result.episodeName,
+      tracks: createdTracks
+    };
   }
 }
 
