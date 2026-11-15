@@ -179,6 +179,11 @@ export interface CutAudioOptions {
   normalizeAudio?: boolean;
   bitrate?: string;
   format?: string;
+  metadata?: {
+    title?: string;
+    track?: string | number;
+    genre?: string;
+  };
 }
 
 export interface ExtractSnapshotOptions {

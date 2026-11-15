@@ -270,6 +270,7 @@ export class SubtitleExportService {
 
     // Estrutura para enfileirar as tarefas de mídia a serem processadas pelo FFmpeg
     interface RowMediaTask {
+      seqNumber: number;
       mediaFilePath: string;
       streamIdx: number;
       effectiveStart: number;
@@ -441,6 +442,7 @@ export class SubtitleExportService {
 
           if (shouldCutAudio || shouldExtractImage || shouldCutVideo) {
             currentTasks.push({
+              seqNumber: seq,
               mediaFilePath: mediaFilePath || '',
               streamIdx,
               effectiveStart,
@@ -585,7 +587,12 @@ export class SubtitleExportService {
                   bitrate: audioBitrate,
                   format: audioFormat,
                   trimSilence,
-                  normalizeAudio
+                  normalizeAudio,
+                  metadata: {
+                    title: path.parse(task.audioBaseName).name,
+                    track: String(task.seqNumber),
+                    genre: 'Speech'
+                  }
                 });
 
                 if (!this.isCancelled) {

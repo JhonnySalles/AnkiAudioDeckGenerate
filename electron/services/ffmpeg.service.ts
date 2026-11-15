@@ -223,7 +223,8 @@ export class FfmpegService {
       trimSilence = true,
       normalizeAudio = true,
       bitrate = '128k',
-      format = 'mp3'
+      format = 'mp3',
+      metadata
     } = options;
 
     if (!fs.existsSync(sourcePath)) {
@@ -258,8 +259,19 @@ export class FfmpegService {
     } else if (normFormat === 'wav') {
       codecArgs = ['-c:a', 'pcm_s16le'];
     } else {
-      // Padrão MP3
-      codecArgs = ['-c:a', 'libmp3lame', '-b:a', bitrate];
+      // Padrão MP3 (ID3v2.3 para compatibilidade com Propriedades do Windows Explorer)
+      codecArgs = ['-c:a', 'libmp3lame', '-b:a', bitrate, '-id3v2_version', '3', '-write_id3v1', '1'];
+    }
+
+    const metadataArgs: string[] = [];
+    if (metadata) {
+      if (metadata.title) {
+        metadataArgs.push('-metadata', `title=${metadata.title}`);
+      }
+      if (metadata.track !== undefined && String(metadata.track).trim().length > 0) {
+        metadataArgs.push('-metadata', `track=${metadata.track}`);
+      }
+      metadataArgs.push('-metadata', `genre=${metadata.genre || 'Speech'}`);
     }
 
     // Construtor dos filtros de áudio
@@ -293,7 +305,7 @@ export class FfmpegService {
         }
       }
 
-      args.push(...codecArgs, resolvedOut);
+      args.push(...codecArgs, ...metadataArgs, resolvedOut);
       return args;
     };
 

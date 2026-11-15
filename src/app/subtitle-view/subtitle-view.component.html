@@ -23,10 +23,91 @@
   </div>
 
   <!-- BARRA DE CABEÇALHO DO PROJETO DE LEGENDAS -->
-  <header class="bg-slate-800 border-b border-slate-700/80 px-4 py-3 flex items-start justify-between gap-4 shrink-0">
-    <div class="flex-1 min-w-0 flex flex-col gap-1">
-      <div class="flex items-center gap-2 w-full">
-        <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 shrink-0">Formato ID:</span>
+  <header class="bg-slate-800 border-b border-slate-700/80 px-4 py-3 flex flex-col gap-1.5 shrink-0">
+    <!-- TEMPLATES REUTILIZÁVEIS PARA QUEBRA RESPONSIVA DE BOTÕES SEM DUPLICAÇÃO -->
+    <ng-template #undoFormatGroup>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <!-- BOTÕES DESFAZER / REFAZER (CTRL+Z / CTRL+Y) -->
+        <div class="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-0.5 shrink-0">
+          <button (click)="undo()" [disabled]="!history.canUndo()"
+                  class="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-700 rounded disabled:opacity-30 disabled:hover:bg-transparent flex items-center gap-1 whitespace-nowrap"
+                  title="Desfazer última alteração (Ctrl+Z)">
+            <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a5 5 0 015 5v2M3 10l6-6m-6 6l6 6" />
+            </svg>
+            <span>Desfazer</span>
+          </button>
+
+          <button (click)="redo()" [disabled]="!history.canRedo()"
+                  class="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-700 rounded disabled:opacity-30 disabled:hover:bg-transparent flex items-center gap-1 whitespace-nowrap"
+                  title="Refazer alteração (Ctrl+Y ou Ctrl+Shift+Z)">
+            <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10H11a5 5 0 00-5 5v2m15-7l-6-6m6 6l-6 6" />
+            </svg>
+            <span>Refazer</span>
+          </button>
+        </div>
+
+        <button (click)="openOutputModal()"
+                class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg border border-slate-600 flex items-center gap-1.5 transition whitespace-nowrap">
+          <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <span>Formato</span>
+        </button>
+      </div>
+    </ng-template>
+
+    <ng-template #exportActionGroup>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <!-- BOTÃO LIMPAR -->
+        <button (click)="resetProject()"
+                [disabled]="project.tracks.length === 0 && project.mediaSources.length === 0 && project.rows.length === 0"
+                class="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs rounded-lg shadow-sm flex items-center gap-1.5 transition disabled:opacity-40 whitespace-nowrap"
+                title="Limpar todas as colunas, mídias e arquivos importados">
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          <span>Limpar</span>
+        </button>
+
+        <!-- BOTÕES SALVAR / ABRIR -->
+        <button (click)="saveProject()"
+                [title]="currentProjectFilePath ? 'Salvar Projeto (Ctrl+S) em: ' + currentProjectFilePath : 'Salvar Projeto (Ctrl+S) - escolher local'"
+                class="px-2.5 py-1 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition flex items-center gap-1.5 text-xs font-medium border border-transparent hover:border-slate-600 whitespace-nowrap">
+          <svg class="w-3.5 h-3.5 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+          </svg>
+          <span>Salvar</span>
+        </button>
+
+        <button (click)="loadProject()"
+                title="Abrir Projeto (.ankisubs.json)"
+                class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+        </button>
+
+        <button (click)="openExportModal()" [disabled]="isExporting || project.rows.length === 0"
+                class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg shadow-sm flex items-center gap-1.5 transition disabled:opacity-50 whitespace-nowrap">
+          <svg *ngIf="!isExporting" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+          </svg>
+          <svg *ngIf="isExporting" class="animate-spin w-4 h-4 shrink-0" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+          </svg>
+          <span>Exportar Anki...</span>
+        </button>
+      </div>
+    </ng-template>
+
+    <!-- LINHA 1: FORMATO ID À ESQUERDA (ESTENDIDO) + BOTÕES DA 1ª LINHA À DIREITA -->
+    <div class="flex flex-wrap min-[720px]:flex-nowrap items-center justify-between gap-2.5 w-full min-w-0">
+      <div class="flex-1 min-w-[260px] min-[720px]:min-w-[300px] flex flex-wrap sm:flex-nowrap items-center gap-2">
+        <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 shrink-0 whitespace-nowrap">Formato ID:</span>
         <input *ngIf="!project.hasImportedId"
                type="text"
                [(ngModel)]="project.idTemplate"
@@ -36,142 +117,101 @@
                (drop)="onIdTemplateDrop($event)"
                placeholder="Formato do ID (ex: Projeto - {time})"
                title="Define o nome/ID dos cards e dos arquivos exportados. Arraste ou clique nas tags abaixo."
-               class="flex-1 min-w-[160px] bg-slate-900 border border-slate-700 px-2.5 py-1 text-sm font-semibold text-slate-100 rounded focus:border-indigo-500 focus:outline-none font-mono" />
+               class="flex-1 min-w-[150px] bg-slate-900 border border-slate-700 px-2.5 py-1 text-sm font-semibold text-slate-100 rounded focus:border-indigo-500 focus:outline-none font-mono" />
         <input *ngIf="project.hasImportedId"
                type="text"
                value="ID importado do arquivo (selecionado na importação)"
                disabled
                title="Os IDs foram definidos pela coluna de ID selecionada na importação do arquivo."
-               class="flex-1 min-w-[160px] bg-slate-950 border border-amber-600/40 px-2.5 py-1 text-xs font-medium text-amber-300/90 rounded cursor-not-allowed opacity-80" />
+               class="flex-1 min-w-[150px] bg-slate-950 border border-amber-600/40 px-2.5 py-1 text-xs font-medium text-amber-300/90 rounded cursor-not-allowed opacity-80" />
         <span *ngIf="project.hasImportedId"
-              class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold shrink-0">
+              class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold shrink-0 whitespace-nowrap">
           ID Importado
         </span>
-        <span class="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 font-mono shrink-0">
+        <span class="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 font-mono shrink-0 whitespace-nowrap">
           {{ project.rows.length }} linhas
         </span>
       </div>
 
-      <!-- Exemplo de como ficará o ID -->
-      <div class="text-[11px] text-slate-400 truncate">
-        Exemplo: <span class="font-mono text-indigo-300">{{ getIdFormatPreview() }}</span>
-      </div>
+      <!-- BOTÕES DA LINHA 1 -->
+      <div class="flex items-center gap-1.5 shrink-0 ml-auto">
+        <!-- GRUPO 1: MÍDIA, LEGENDAS E AUTO-ALINHAR (SEMPRE NA LINHA 1) -->
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button (click)="addMediaSource()"
+                  class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg border border-slate-600 flex items-center gap-1.5 transition whitespace-nowrap">
+            <svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            <span>+ Mídia</span>
+          </button>
 
-      <!-- Seleção de Tags para Composição Automática do ID (quebra de linha automática) -->
-      <div *ngIf="!project.hasImportedId" class="flex flex-wrap items-center gap-1 pt-0.5">
-        <span *ngFor="let tag of idFormatTags"
-              draggable="true"
-              (dragstart)="onTagDragStart($event, tag.token)"
-              (click)="insertTagInIdTemplate(tag.token)"
-              title="Arraste para o campo de ID ou clique para inserir no cursor"
-              class="px-1.5 py-0.5 bg-slate-900 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-slate-700 hover:border-indigo-500 rounded text-[10px] font-mono cursor-grab active:cursor-grabbing select-none transition flex items-center gap-1">
-          <span class="font-semibold">{{ tag.label }}</span>
-          <span class="text-slate-400">{{ tag.token }}</span>
-        </span>
-      </div>
-      <div *ngIf="project.hasImportedId" class="text-[11px] text-amber-300/80">
-        Modo Importação: os IDs selecionados na coluna de ID do arquivo importado serão mantidos na exportação.
+          <button (click)="addSubtitles()"
+                  class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg border border-slate-600 flex items-center gap-1.5 transition whitespace-nowrap">
+            <svg class="w-4 h-4 text-sky-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>+ Legenda(s)</span>
+          </button>
+
+          <button (click)="autoAlign()" [disabled]="project.tracks.length === 0"
+                  class="px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-xs font-medium rounded-lg flex items-center gap-1.5 transition disabled:opacity-40 whitespace-nowrap">
+            <svg class="w-4 h-4 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span>Auto-Alinhar</span>
+          </button>
+        </div>
+
+        <!-- GRUPO 2 NA LINHA 1 QUANDO >= 1020PX -->
+        <div class="hidden min-[1020px]:flex items-center gap-1.5 shrink-0">
+          <ng-container *ngTemplateOutlet="undoFormatGroup"></ng-container>
+        </div>
+
+        <!-- SEPARADOR | + GRUPO 3 NA LINHA 1 QUANDO >= 1360PX -->
+        <div class="hidden min-[1360px]:flex items-center gap-1.5 shrink-0">
+          <div class="h-6 w-px bg-slate-700 mx-0.5 shrink-0"></div>
+          <ng-container *ngTemplateOutlet="exportActionGroup"></ng-container>
+        </div>
       </div>
     </div>
 
-    <!-- BOTÕES DE AÇÃO SUPERIOR -->
-    <div class="flex items-center gap-1.5 shrink-0 pt-0.5">
-      <button (click)="addMediaSource()"
-              class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg border border-slate-600 flex items-center gap-1.5 transition">
-        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-        </svg>
-        <span>+ Mídia</span>
-      </button>
+    <!-- LINHA 2 (E 3ª LINHA EM TELAS PEQUENAS): EXEMPLO + TAGS OCUPANDO TODO O ESPAÇO DISPONÍVEL + BOTÕES QUEBRADOS À DIREITA -->
+    <div class="flex flex-wrap min-[640px]:flex-nowrap items-start justify-between gap-3 w-full min-w-0">
+      <div class="flex-1 min-w-[260px] flex flex-col gap-1">
+        <!-- Exemplo de como ficará o ID -->
+        <div class="text-[11px] text-slate-400 truncate">
+          Exemplo: <span class="font-mono text-indigo-300">{{ getIdFormatPreview() }}</span>
+        </div>
 
-      <button (click)="addSubtitles()"
-              class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg border border-slate-600 flex items-center gap-1.5 transition">
-        <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-        <span>+ Legenda(s)</span>
-      </button>
-
-      <button (click)="autoAlign()" [disabled]="project.tracks.length === 0"
-              class="px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-xs font-medium rounded-lg flex items-center gap-1.5 transition disabled:opacity-40">
-        <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-        <span>Auto-Alinhar</span>
-      </button>
-
-      <!-- BOTÕES DESFAZER / REFAZER (CTRL+Z / CTRL+Y) -->
-      <div class="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-0.5">
-        <button (click)="undo()" [disabled]="!history.canUndo()"
-                class="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-700 rounded disabled:opacity-30 disabled:hover:bg-transparent flex items-center gap-1"
-                title="Desfazer última alteração (Ctrl+Z)">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a5 5 0 015 5v2M3 10l6-6m-6 6l6 6" />
-          </svg>
-          <span>Desfazer</span>
-        </button>
-
-        <button (click)="redo()" [disabled]="!history.canRedo()"
-                class="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-700 rounded disabled:opacity-30 disabled:hover:bg-transparent flex items-center gap-1"
-                title="Refazer alteração (Ctrl+Y ou Ctrl+Shift+Z)">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10H11a5 5 0 00-5 5v2m15-7l-6-6m6 6l-6 6" />
-          </svg>
-          <span>Refazer</span>
-        </button>
+        <!-- Seleção de Tags para Composição Automática do ID (ocupa toda a sobra disponível e quebra automaticamente) -->
+        <div *ngIf="!project.hasImportedId" class="flex flex-wrap items-center gap-1">
+          <span *ngFor="let tag of idFormatTags"
+                draggable="true"
+                (dragstart)="onTagDragStart($event, tag.token)"
+                (click)="insertTagInIdTemplate(tag.token)"
+                title="Arraste para o campo de ID ou clique para inserir no cursor"
+                class="px-1.5 py-0.5 bg-slate-900 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-slate-700 hover:border-indigo-500 rounded text-[10px] font-mono cursor-grab active:cursor-grabbing select-none transition flex items-center gap-1">
+            <span class="font-semibold">{{ tag.label }}</span>
+            <span class="text-slate-400">{{ tag.token }}</span>
+          </span>
+        </div>
+        <div *ngIf="project.hasImportedId" class="text-[11px] text-amber-300/80">
+          Modo Importação: os IDs selecionados na coluna de ID do arquivo importado serão mantidos na exportação.
+        </div>
       </div>
 
-      <button (click)="openOutputModal()"
-              class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg border border-slate-600 flex items-center gap-1.5 transition">
-        <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-        <span>Formato</span>
-      </button>
+      <!-- BOTÕES QUEBRADOS NA 2ª / 3ª LINHA (OCULTO EM >= 1360PX) -->
+      <div class="flex min-[1360px]:hidden flex-col items-end gap-1.5 shrink-0 ml-auto">
+        <!-- GRUPO 2 PASSA PARA A 2ª LINHA QUANDO < 1020PX -->
+        <div class="flex min-[1020px]:hidden items-center gap-1.5 shrink-0">
+          <ng-container *ngTemplateOutlet="undoFormatGroup"></ng-container>
+        </div>
 
-      <div class="h-6 w-px bg-slate-700 mx-1"></div>
-
-      <!-- BOTÃO LIMPAR -->
-      <button (click)="resetProject()"
-              [disabled]="project.tracks.length === 0 && project.mediaSources.length === 0 && project.rows.length === 0"
-              class="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs rounded-lg shadow-sm flex items-center gap-1.5 transition disabled:opacity-40"
-              title="Limpar todas as colunas, mídias e arquivos importados">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-        </svg>
-        <span>Limpar</span>
-      </button>
-
-      <!-- BOTÕES SALVAR / ABRIR -->
-      <button (click)="saveProject()"
-              [title]="currentProjectFilePath ? 'Salvar Projeto (Ctrl+S) em: ' + currentProjectFilePath : 'Salvar Projeto (Ctrl+S) - escolher local'"
-              class="px-2.5 py-1 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition flex items-center gap-1.5 text-xs font-medium border border-transparent hover:border-slate-600">
-        <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-        </svg>
-        <span>Salvar</span>
-      </button>
-
-      <button (click)="loadProject()"
-              title="Abrir Projeto (.ankisubs.json)"
-              class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-        </svg>
-      </button>
-
-      <button (click)="openExportModal()" [disabled]="isExporting || project.rows.length === 0"
-              class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg shadow-sm flex items-center gap-1.5 transition disabled:opacity-50">
-        <svg *ngIf="!isExporting" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-        </svg>
-        <svg *ngIf="isExporting" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
-        </svg>
-        <span>Exportar Anki...</span>
-      </button>
+        <!-- GRUPO 3 FICA NA 2ª LINHA (1020-1359PX) OU 3ª LINHA (< 1020PX) -->
+        <div class="flex items-center gap-1.5 shrink-0">
+          <ng-container *ngTemplateOutlet="exportActionGroup"></ng-container>
+        </div>
+      </div>
     </div>
   </header>
 

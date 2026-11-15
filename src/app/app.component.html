@@ -1,47 +1,47 @@
 <div class="flex flex-col h-screen bg-slate-950 text-slate-100 select-none overflow-hidden">
 
   <!-- ================= TOP NAVIGATION BAR ================= -->
-  <header class="flex items-center justify-between px-6 py-3.5 bg-slate-900/80 border-b border-slate-800 backdrop-blur-md z-20">
-    <div class="flex items-center space-x-3">
-      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-        <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+  <header class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 sm:px-6 py-2 bg-slate-900/80 border-b border-slate-800 backdrop-blur-md z-20 shrink-0">
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
+        <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z" />
         </svg>
       </div>
-      <div>
-        <h1 class="text-base font-bold text-white tracking-wide flex items-center gap-2">
-          Anki Audio Deck Creator
-          <span class="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">Desktop</span>
+      <div class="min-w-0 leading-tight">
+        <h1 class="text-sm font-bold text-white tracking-wide flex items-center gap-2 whitespace-nowrap leading-tight">
+          <span>Anki Audio Deck Creator</span>
+          <span class="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 shrink-0">Desktop</span>
         </h1>
-        <p class="text-xs text-slate-400">Geração e gerenciamento ágil de Decks a partir de Músicas / Lyrics</p>
+        <p class="text-[11px] text-slate-400 truncate max-w-[260px] sm:max-w-none leading-tight">Geração e gerenciamento ágil de Decks a partir de Músicas / Lyrics</p>
       </div>
     </div>
 
     <!-- Center: Mode Switcher & Status -->
-    <div class="flex items-center space-x-3">
+    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
       <!-- Seletor de Modo: Filmes / Séries vs Músicas -->
-      <div class="flex items-center p-0.5 rounded-lg bg-slate-950 border border-slate-700/80 text-xs">
+      <div class="flex items-center p-0.5 rounded-lg bg-slate-950 border border-slate-700/80 text-xs shrink-0">
         <button (click)="currentMode = 'subtitles'"
                 [ngClass]="currentMode === 'subtitles' ? 'bg-indigo-600 text-white font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
-                class="px-3 py-1 rounded-md transition flex items-center gap-1.5">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                class="px-3 py-1 rounded-md transition flex items-center gap-1.5 whitespace-nowrap">
+          <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
           </svg>
           <span>Legendas / Filmes</span>
         </button>
         <button (click)="currentMode = 'music'"
                 [ngClass]="currentMode === 'music' ? 'bg-indigo-600 text-white font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
-                class="px-3 py-1 rounded-md transition flex items-center gap-1.5">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                class="px-3 py-1 rounded-md transition flex items-center gap-1.5 whitespace-nowrap">
+          <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
           </svg>
           <span>Músicas / Lyrics</span>
         </button>
       </div>
 
-      <div class="flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border"
+      <div class="flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border shrink-0 whitespace-nowrap"
            [ngClass]="ankiStatus.connected ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-amber-500/10 border-amber-500/30 text-amber-400'">
-        <span class="w-2 h-2 rounded-full mr-2"
+        <span class="w-2 h-2 rounded-full mr-2 shrink-0"
               [ngClass]="ankiStatus.connected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'"></span>
         <span>{{ ankiStatus.connected ? 'Anki Conectado (v' + ankiStatus.version + ')' : 'AnkiConnect Desconectado' }}</span>
         <button *ngIf="!ankiStatus.connected"
@@ -51,41 +51,41 @@
         </button>
       </div>
 
-      <div class="flex items-center px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300">
+      <div class="flex items-center px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300 shrink-0 whitespace-nowrap">
         <span class="text-slate-400 mr-1.5">Baralho Ativo:</span>
         <span class="text-indigo-400 font-semibold">{{ settings.deckName || 'Default' }}</span>
       </div>
 
-      <div class="flex items-center px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300">
+      <div class="flex items-center px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300 shrink-0 whitespace-nowrap">
         <span class="text-indigo-400 font-bold mr-1">{{ createdCount }}</span> cards salvos hoje
       </div>
     </div>
 
     <!-- Right: Actions -->
-    <div class="flex items-center space-x-2">
+    <div class="flex items-center gap-2 shrink-0 ml-auto">
       <!-- Botão Console / Logs -->
       <button (click)="isLogConsoleOpen = true"
-              class="relative px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 transition-all flex items-center gap-1.5"
+              class="relative px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 transition-all flex items-center gap-1.5 whitespace-nowrap"
               title="Abrir Console de Logs (Ctrl+L)">
-        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
         <span>Console</span>
       </button>
 
       <button (click)="isHistoryOpen = !isHistoryOpen"
-              class="relative px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 transition-all flex items-center gap-1.5">
-        <svg class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              class="relative px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 transition-all flex items-center gap-1.5 whitespace-nowrap">
+        <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        Histórico
+        <span>Histórico</span>
         <span *ngIf="sessionHistory.length > 0" class="px-1.5 py-0.2 bg-indigo-600 text-white rounded-full text-[10px]">
           {{ sessionHistory.length }}
         </span>
       </button>
 
       <button (click)="isSettingsOpen = true"
-              class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-all"
+              class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-all shrink-0"
               title="Configurações">
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
