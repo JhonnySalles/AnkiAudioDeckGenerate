@@ -23,29 +23,59 @@
   </div>
 
   <!-- BARRA DE CABEÇALHO DO PROJETO DE LEGENDAS -->
-  <header class="bg-slate-800 border-b border-slate-700/80 px-4 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
-    <div class="flex items-center gap-3">
-      <div class="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/30">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
-        </svg>
+  <header class="bg-slate-800 border-b border-slate-700/80 px-4 py-3 flex items-start justify-between gap-4 shrink-0">
+    <div class="flex-1 min-w-0 flex flex-col gap-1">
+      <div class="flex items-center gap-2 w-full">
+        <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 shrink-0">Formato ID:</span>
+        <input *ngIf="!project.hasImportedId"
+               type="text"
+               [(ngModel)]="project.idTemplate"
+               (ngModelChange)="reprocessIds()"
+               (focus)="onIdTemplateFocus($event)"
+               (dragover)="onTemplateDragOver($event)"
+               (drop)="onIdTemplateDrop($event)"
+               placeholder="Formato do ID (ex: Projeto - {time})"
+               title="Define o nome/ID dos cards e dos arquivos exportados. Arraste ou clique nas tags abaixo."
+               class="flex-1 min-w-[160px] bg-slate-900 border border-slate-700 px-2.5 py-1 text-sm font-semibold text-slate-100 rounded focus:border-indigo-500 focus:outline-none font-mono" />
+        <input *ngIf="project.hasImportedId"
+               type="text"
+               value="ID importado do arquivo (selecionado na importação)"
+               disabled
+               title="Os IDs foram definidos pela coluna de ID selecionada na importação do arquivo."
+               class="flex-1 min-w-[160px] bg-slate-950 border border-amber-600/40 px-2.5 py-1 text-xs font-medium text-amber-300/90 rounded cursor-not-allowed opacity-80" />
+        <span *ngIf="project.hasImportedId"
+              class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold shrink-0">
+          ID Importado
+        </span>
+        <span class="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 font-mono shrink-0">
+          {{ project.rows.length }} linhas
+        </span>
       </div>
-      <div>
-        <div class="flex items-center gap-2">
-          <input [(ngModel)]="project.mediaName" placeholder="Nome do Filme / Episódio"
-                 class="bg-slate-900 border border-slate-700 px-2.5 py-1 text-sm font-semibold text-slate-100 rounded focus:border-indigo-500 focus:outline-none w-72" />
-          <span class="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 font-mono">
-            {{ project.rows.length }} linhas
-          </span>
-        </div>
-        <p class="text-[11px] text-slate-400 mt-0.5">
-          Geração de cards com múltiplos idiomas, corte inteligente e sincronização.
-        </p>
+
+      <!-- Exemplo de como ficará o ID -->
+      <div class="text-[11px] text-slate-400 truncate">
+        Exemplo: <span class="font-mono text-indigo-300">{{ getIdFormatPreview() }}</span>
+      </div>
+
+      <!-- Seleção de Tags para Composição Automática do ID (quebra de linha automática) -->
+      <div *ngIf="!project.hasImportedId" class="flex flex-wrap items-center gap-1 pt-0.5">
+        <span *ngFor="let tag of idFormatTags"
+              draggable="true"
+              (dragstart)="onTagDragStart($event, tag.token)"
+              (click)="insertTagInIdTemplate(tag.token)"
+              title="Arraste para o campo de ID ou clique para inserir no cursor"
+              class="px-1.5 py-0.5 bg-slate-900 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-slate-700 hover:border-indigo-500 rounded text-[10px] font-mono cursor-grab active:cursor-grabbing select-none transition flex items-center gap-1">
+          <span class="font-semibold">{{ tag.label }}</span>
+          <span class="text-slate-400">{{ tag.token }}</span>
+        </span>
+      </div>
+      <div *ngIf="project.hasImportedId" class="text-[11px] text-amber-300/80">
+        Modo Importação: os IDs selecionados na coluna de ID do arquivo importado serão mantidos na exportação.
       </div>
     </div>
 
     <!-- BOTÕES DE AÇÃO SUPERIOR -->
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-1.5 shrink-0 pt-0.5">
       <button (click)="addMediaSource()"
               class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg border border-slate-600 flex items-center gap-1.5 transition">
         <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -91,7 +121,7 @@
         </button>
       </div>
 
-      <button (click)="isOutputModalOpen = true"
+      <button (click)="openOutputModal()"
               class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg border border-slate-600 flex items-center gap-1.5 transition">
         <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -150,14 +180,14 @@
     <!-- SELEÇÃO DE ID E SEQUÊNCIA -->
     <div class="flex items-center gap-2">
       <span class="text-slate-400 font-medium">Tempo do ID:</span>
-      <select [(ngModel)]="project.timingTrackId" class="bg-slate-900 border border-slate-700 text-slate-200 px-2 py-1 rounded focus:outline-none">
+      <select [(ngModel)]="project.timingTrackId" (ngModelChange)="reprocessIds()" class="bg-slate-900 border border-slate-700 text-slate-200 px-2 py-1 rounded focus:outline-none">
         <option *ngFor="let t of project.tracks" [value]="t.id">{{ t.label }} ({{ t.cues.length }} falas)</option>
       </select>
     </div>
 
     <div class="flex items-center gap-2">
       <span class="text-slate-400 font-medium">Sequência:</span>
-      <select [(ngModel)]="project.sequenceTrackId" class="bg-slate-900 border border-slate-700 text-slate-200 px-2 py-1 rounded focus:outline-none">
+      <select [(ngModel)]="project.sequenceTrackId" (ngModelChange)="reprocessIds()" class="bg-slate-900 border border-slate-700 text-slate-200 px-2 py-1 rounded focus:outline-none">
         <option *ngFor="let t of project.tracks" [value]="t.id">{{ t.label }}</option>
       </select>
     </div>
@@ -245,21 +275,38 @@
 
     <!-- CABEÇALHO DA TABELA -->
     <div class="grid bg-slate-900 border-b border-slate-800 text-[11px] font-semibold text-slate-400 px-3 py-2 shrink-0 select-none"
-         [style.gridTemplateColumns]="'60px 180px repeat(' + project.tracks.length + ', minmax(280px, 1fr)) 40px'">
+         [style.gridTemplateColumns]="'60px 180px repeat(' + project.tracks.length + ', minmax(280px, 1fr)) 56px'">
       <div># SEQ</div>
       <div>ID (TEMPO / CENA)</div>
-      <div *ngFor="let t of project.tracks; let i = index" class="flex items-center justify-between pr-2">
+      <div *ngFor="let t of project.tracks; let i = index" class="flex items-center justify-between gap-2 pr-2 min-w-0">
         <span class="truncate">COLUNA {{ i + 1 }}: {{ t.label }}</span>
-        <button (click)="openShiftModal(t.id, 0)"
-                title="Ajustar tempo / Deslocar legenda desta coluna"
-                class="px-2 py-0.5 rounded bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white text-[10px] flex items-center gap-1 transition">
-          <svg class="w-3 h-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span>Deslocar (ms)</span>
-        </button>
+        <div class="flex items-center gap-1 shrink-0">
+          <button (click)="openShiftModal(t.id, 0)"
+                  title="Ajustar tempo / Deslocar legenda desta coluna"
+                  class="px-2 py-0.5 rounded bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white text-[10px] flex items-center gap-1 transition">
+            <svg class="w-3 h-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Deslocar (ms)</span>
+          </button>
+          <button (click)="removeTrack(i)"
+                  title="Excluir esta coluna"
+                  class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-red-600 text-slate-400 hover:text-white text-[10px] flex items-center justify-center transition">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
       </div>
-      <div class="text-right">EXC</div>
+      <div class="flex items-center justify-end gap-1.5" title="Marcar ou desmarcar todos os cards para exportação">
+        <span>INC</span>
+        <input type="checkbox"
+               #selectAllCheckbox
+               [checked]="isAllRowsIncluded()"
+               [indeterminate]="isSomeRowsIncluded()"
+               (change)="toggleAllRowsExcluded(selectAllCheckbox)"
+               class="w-4 h-4 rounded text-indigo-600 bg-slate-800 border-slate-700 focus:ring-0 cursor-pointer" />
+      </div>
     </div>
 
     <!-- LISTA ROLÁVEL COM VIRTUAL SCROLL -->
@@ -268,7 +315,7 @@
            (drop)="onRowFileDrop($event, row)"
            class="grid border-b border-slate-800/80 px-3 py-2 items-center hover:bg-slate-900/50 transition duration-75"
            [class.opacity-40]="row.excluded"
-           [style.gridTemplateColumns]="'60px 180px repeat(' + project.tracks.length + ', minmax(280px, 1fr)) 40px'">
+           [style.gridTemplateColumns]="'60px 180px repeat(' + project.tracks.length + ', minmax(280px, 1fr)) 56px'">
 
         <!-- SEQUÊNCIA -->
         <div class="text-xs font-mono font-bold text-slate-400">
@@ -276,12 +323,14 @@
         </div>
 
         <!-- ID E TEMPO DE REFERÊNCIA -->
-        <div class="text-[11px] pr-2">
-          <div class="font-medium text-slate-200 truncate" [title]="project.mediaName">
-            {{ project.mediaName }}
+        <div class="text-[11px] pr-2 min-w-0">
+          <div class="font-medium text-slate-200 truncate" [title]="row.cardId || project.mediaName">
+            {{ row.cardId || project.mediaName }}
           </div>
-          <div class="text-[10px] text-indigo-400 font-mono mt-0.5">
-            {{ row.cells[project.timingTrackId]?.startMs ? parser.msToIdTime(row.cells[project.timingTrackId]!.startMs) : '--:--:--' }}
+          <div class="text-[10px] font-mono mt-0.5 flex items-center gap-1.5"
+               [ngClass]="(project.hasImportedId && row.customId) ? 'text-amber-400' : 'text-indigo-400'">
+            <span>{{ row.cells[project.timingTrackId] ? parser.msToIdTime(row.cells[project.timingTrackId]!.startMs) : '--:--:--' }}</span>
+            <span *ngIf="project.hasImportedId && row.customId" class="text-[9px] px-1 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300">importado</span>
           </div>
         </div>
 
@@ -422,11 +471,11 @@
           </ng-template>
         </div>
 
-        <!-- EXCLUIR LINHA DO DECK -->
-        <div class="text-right">
+        <!-- INCLUIR / EXCLUIR LINHA DO DECK -->
+        <div class="text-right pr-0.5">
           <input type="checkbox" [checked]="!row.excluded" (change)="toggleRowExcluded(row)"
                  title="Incluir na exportação Anki"
-                 class="w-4 h-4 rounded text-indigo-600 bg-slate-800 border-slate-700 focus:ring-0" />
+                 class="w-4 h-4 rounded text-indigo-600 bg-slate-800 border-slate-700 focus:ring-0 cursor-pointer" />
         </div>
       </div>
     </cdk-virtual-scroll-viewport>
@@ -448,6 +497,7 @@
           <label class="block font-medium text-slate-300 mb-1">Local do Arquivo de Texto do Deck (.txt):</label>
           <div class="flex items-center gap-2">
             <input type="text" [(ngModel)]="exportOptions.outputTxtPath"
+                   (ngModelChange)="onOutputTxtPathChange($event)"
                    [placeholder]="project.mediaName ? project.mediaName + '_anki.txt (pasta padrão)' : 'Deixar em branco para padrão'"
                    class="flex-1 bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200 focus:outline-none" />
             <button (click)="browseExportTxtPath()"
@@ -462,7 +512,7 @@
           <label class="block font-medium text-slate-300 mb-1">Pasta Destino das Mídias (.mp3 / .jpg):</label>
           <div class="flex items-center gap-2">
             <input type="text" [(ngModel)]="exportOptions.mediaOutputDir"
-                   placeholder="Ex: C:/Decks/MeuDeck_midia"
+                   placeholder="Deixar em branco para salvar em {nome_do_arquivo}_midia na mesma pasta"
                    class="flex-1 bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200 focus:outline-none" />
             <button (click)="browseMediaOutputDir()"
                     class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded font-medium">
@@ -597,7 +647,7 @@
 
   <!-- MODAL DE CONFIGURAÇÃO DE SAÍDA (FORMATO DE SAÍDA) -->
   <div *ngIf="isOutputModalOpen" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-xl p-6 shadow-2xl flex flex-col gap-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 shadow-2xl flex flex-col gap-4">
       <div class="flex items-center justify-between border-b border-slate-700 pb-3">
         <h3 class="text-base font-bold text-white flex items-center gap-2">
           <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -673,6 +723,79 @@
                  class="rounded text-indigo-600 bg-slate-900 border-slate-700 disabled:cursor-not-allowed" />
           <span class="text-slate-300">Incluir cabeçalhos Anki (#separator:tab, #html:true)</span>
         </label>
+
+        <!-- SETOR DE FORMATAÇÃO DOS NOMES DE SAÍDA (ÁUDIO, IMAGEM E VÍDEO) -->
+        <div class="p-3.5 bg-slate-900/80 border border-slate-700/80 rounded-xl space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="block font-bold text-slate-200 text-xs">Formatação dos Nomes de Saída (Áudio, Imagem e Vídeo)</span>
+              <span class="text-[11px] text-slate-400">Arraste as tags para dentro dos campos ou digite prefixos/posfixos livres.</span>
+            </div>
+            <button type="button" (click)="resetMediaNameTemplates()"
+                    class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded text-[11px] font-medium transition">
+              Restaurar Padrão
+            </button>
+          </div>
+
+          <!-- Tags Arrastáveis / Clicáveis -->
+          <div class="flex flex-wrap items-center gap-1.5 p-2 bg-slate-950/80 border border-slate-800 rounded-lg">
+            <span class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mr-1">Tags:</span>
+            <span *ngFor="let tag of mediaNameTags"
+                  draggable="true"
+                  (dragstart)="onTagDragStart($event, tag.token)"
+                  (click)="insertTagInTemplate(tag.token)"
+                  title="Arraste para um campo abaixo ou clique para inserir no cursor"
+                  class="px-2 py-1 bg-indigo-950/80 hover:bg-indigo-600 text-indigo-200 hover:text-white border border-indigo-700/60 rounded-md text-[11px] font-mono cursor-grab active:cursor-grabbing select-none transition flex items-center gap-1">
+              <span class="text-indigo-400 font-bold">{{ tag.label }}</span>
+              <span class="text-slate-400 text-[10px]">{{ tag.token }}</span>
+            </span>
+          </div>
+
+          <!-- Editor: Áudio / Som -->
+          <div class="space-y-1">
+            <label class="block font-medium text-emerald-300 text-[11px]">Nome de Saída do Áudio / Som:</label>
+            <input type="text"
+                   [(ngModel)]="project.output.audioNameTemplate"
+                   (focus)="onTemplateFocus('audio', $event)"
+                   (dragover)="onTemplateDragOver($event)"
+                   (drop)="onTemplateDrop($event, 'audio')"
+                   placeholder="Ex: Som de teste {id}_{seq}_{start}-{end}"
+                   class="w-full bg-slate-950 border border-slate-700 focus:border-indigo-500 rounded-lg px-2.5 py-1.5 text-slate-100 font-mono text-xs focus:outline-none" />
+            <div class="text-[10px] text-slate-400 font-mono truncate">
+              Preview: <span class="text-emerald-400">{{ getMediaNamePreview('audio') }}</span>
+            </div>
+          </div>
+
+          <!-- Editor: Imagem -->
+          <div class="space-y-1">
+            <label class="block font-medium text-sky-300 text-[11px]">Nome de Saída da Imagem:</label>
+            <input type="text"
+                   [(ngModel)]="project.output.imageNameTemplate"
+                   (focus)="onTemplateFocus('image', $event)"
+                   (dragover)="onTemplateDragOver($event)"
+                   (drop)="onTemplateDrop($event, 'image')"
+                   placeholder="Ex: {id}_{track}_{seq}_{mid}"
+                   class="w-full bg-slate-950 border border-slate-700 focus:border-indigo-500 rounded-lg px-2.5 py-1.5 text-slate-100 font-mono text-xs focus:outline-none" />
+            <div class="text-[10px] text-slate-400 font-mono truncate">
+              Preview: <span class="text-sky-400">{{ getMediaNamePreview('image') }}</span>
+            </div>
+          </div>
+
+          <!-- Editor: Vídeo -->
+          <div class="space-y-1">
+            <label class="block font-medium text-amber-300 text-[11px]">Nome de Saída do Vídeo:</label>
+            <input type="text"
+                   [(ngModel)]="project.output.videoNameTemplate"
+                   (focus)="onTemplateFocus('video', $event)"
+                   (dragover)="onTemplateDragOver($event)"
+                   (drop)="onTemplateDrop($event, 'video')"
+                   placeholder="Ex: {id}_{track}_{seq}_{start}-{end}"
+                   class="w-full bg-slate-950 border border-slate-700 focus:border-indigo-500 rounded-lg px-2.5 py-1.5 text-slate-100 font-mono text-xs focus:outline-none" />
+            <div class="text-[10px] text-slate-400 font-mono truncate">
+              Preview: <span class="text-amber-400">{{ getMediaNamePreview('video') }}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-700">
@@ -920,7 +1043,7 @@
               <select *ngIf="col.action === 'combine'"
                       [(ngModel)]="col.combineWithTrackIndex"
                       class="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1 focus:outline-none">
-                <option *ngFor="let t of getAvailableCombineTargets(col.index)" [value]="t.index">
+                <option *ngFor="let t of getAvailableCombineTargets(col.index)" [ngValue]="t.index">
                   {{ t.label }}
                 </option>
               </select>

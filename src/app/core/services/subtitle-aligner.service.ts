@@ -51,6 +51,7 @@ export class SubtitleAlignerService {
       origStartMs: number;
       origEndMs: number;
       text: string;
+      importedId?: string;
       cueIds: string[];
     }> = baseTrack.cues.map(c => ({
       ...c,
@@ -69,8 +70,11 @@ export class SubtitleAlignerService {
         const endsWithContinuation = /[,、→…]$|\.{3}$/.test(current.text.trim());
         const gap = next.startMs - current.endMs;
 
+        // Nunca mesclar linhas com ID importado distinto para manter correspondência 1:1 com o Anki
+        const hasImported = Boolean(current.importedId || next.importedId);
+
         // Se termina com vírgula ou pontuação de continuação e a próxima começa em até 1200ms
-        if (endsWithContinuation && gap >= -500 && gap <= 1200) {
+        if (!hasImported && endsWithContinuation && gap >= -500 && gap <= 1200) {
           current.endMs = Math.max(current.endMs, next.endMs);
           current.origEndMs = Math.max(current.origEndMs, next.origEndMs);
           current.text = `${current.text} ${next.text}`;
@@ -139,7 +143,8 @@ export class SubtitleAlignerService {
         const gap = nextCue.startMs - curGroup.endMs;
 
         // Se ambos pertencem à mesma cue da legenda secundária e o intervalo não é gigantesco (<= 2500ms)
-        if (curCpId !== null && nextCpId !== null && curCpId === nextCpId && gap <= 2500) {
+        const hasImported = Boolean(curGroup.importedId || nextCue.importedId);
+        if (!hasImported && curCpId !== null && nextCpId !== null && curCpId === nextCpId && gap <= 2500) {
           curGroup.endMs = Math.max(curGroup.endMs, nextCue.endMs);
           curGroup.origEndMs = Math.max(curGroup.origEndMs, nextCue.origEndMs);
           curGroup.text = `${curGroup.text} ${nextCue.text}`;
@@ -161,6 +166,8 @@ export class SubtitleAlignerService {
       const firstWithImage = matchedCues.find(c => c.imageFileName || c.customImagePath);
       const firstWithAudio = matchedCues.find(c => c.audioFileName || c.customAudioPath);
 
+      const firstWithImportedId = baseCue.importedId || matchedCues.find(c => c.importedId)?.importedId;
+
       const cells: Record<string, AlignedCell | null> = {
         [baseTrack.id]: {
           trackId: baseTrack.id,
@@ -171,7 +178,8 @@ export class SubtitleAlignerService {
           imageFileName: firstWithImage?.imageFileName,
           customImagePath: firstWithImage?.customImagePath,
           audioFileName: firstWithAudio?.audioFileName,
-          customAudioPath: firstWithAudio?.customAudioPath
+          customAudioPath: firstWithAudio?.customAudioPath,
+          importedId: firstWithImportedId
         }
       };
 
@@ -183,7 +191,8 @@ export class SubtitleAlignerService {
         id: `row_${idx + 1}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         index: idx + 1,
         cells,
-        excluded: false
+        excluded: false,
+        customId: firstWithImportedId
       });
     });
 
@@ -250,6 +259,7 @@ export class SubtitleAlignerService {
         const cueIds = cuesList.map(c => c.id);
         const firstWithImage = cuesList.find(c => c.imageFileName || c.customImagePath);
         const firstWithAudio = cuesList.find(c => c.audioFileName || c.customAudioPath);
+        const firstWithImportedId = cuesList.find(c => c.importedId)?.importedId;
 
         rows[rIdx].cells[track.id] = {
           trackId: track.id,
@@ -260,8 +270,13 @@ export class SubtitleAlignerService {
           imageFileName: firstWithImage?.imageFileName,
           customImagePath: firstWithImage?.customImagePath,
           audioFileName: firstWithAudio?.audioFileName,
-          customAudioPath: firstWithAudio?.customAudioPath
+          customAudioPath: firstWithAudio?.customAudioPath,
+          importedId: firstWithImportedId
         };
+
+        if (firstWithImportedId && !rows[rIdx].customId) {
+          rows[rIdx].customId = firstWithImportedId;
+        }
       });
     });
 
@@ -278,10 +293,24 @@ export class SubtitleAlignerService {
     return rows;
   }
 
+  private syncMovedImportedIds(rows: AlignedRow[], movedTrackId: string, hadImportedIdsOnTrack: boolean): void {
+    if (!hadImportedIdsOnTrack) return;
+    for (const row of rows) {
+      const movedCell = row.cells[movedTrackId];
+      if (movedCell?.importedId) {
+        row.customId = movedCell.importedId;
+      } else {
+        const fallbackCell = Object.values(row.cells).find(c => c?.importedId);
+        row.customId = fallbackCell?.importedId;
+      }
+    }
+  }
+
   /**
    * Desloca (shift) as células de uma coluna a partir de uma dada linha para baixo (+1) ou para cima (-1)
    */
   public shiftColumn(rows: AlignedRow[], trackId: string, fromIndex: number, direction: 'down' | 'up'): AlignedRow[] {
+    const trackHasImportedIds = rows.some(r => !!r.cells[trackId]?.importedId);
     const updated = [...rows];
     if (direction === 'down') {
       // Abre espaço na linha fromIndex empurrando as de baixo
@@ -297,7 +326,8 @@ export class SubtitleAlignerService {
           id: `row_extra_${Date.now()}`,
           index: updated.length + 1,
           cells: { [trackId]: prevCell },
-          excluded: false
+          excluded: false,
+          customId: prevCell.importedId
         };
         updated.push(newRow);
       }
@@ -308,6 +338,7 @@ export class SubtitleAlignerService {
       }
       updated[updated.length - 1].cells = { ...updated[updated.length - 1].cells, [trackId]: null };
     }
+    this.syncMovedImportedIds(updated, trackId, trackHasImportedIds);
     return updated;
   }
 
@@ -317,6 +348,7 @@ export class SubtitleAlignerService {
    */
   public moveBlockToRow(rows: AlignedRow[], trackId: string, fromIndex: number, toIndex: number): AlignedRow[] {
     if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return rows;
+    const trackHasImportedIds = rows.some(r => !!r.cells[trackId]?.importedId);
     const updated = rows.map(r => ({ ...r, cells: { ...r.cells } }));
 
     // Extrai todas as células da coluna a partir de fromIndex
@@ -337,7 +369,8 @@ export class SubtitleAlignerService {
           id: `row_extra_${Date.now()}_${i}`,
           index: updated.length + 1,
           cells: { [trackId]: cell },
-          excluded: false
+          excluded: false,
+          customId: cell.importedId
         });
       }
     }
@@ -357,6 +390,7 @@ export class SubtitleAlignerService {
       }
     }
 
+    this.syncMovedImportedIds(updated, trackId, trackHasImportedIds);
     updated.forEach((r, idx) => (r.index = idx + 1));
     return updated;
   }
@@ -400,7 +434,12 @@ export class SubtitleAlignerService {
       cueIds: [...current.cueIds, ...next.cueIds],
       startMs: Math.min(current.startMs, next.startMs),
       endMs: Math.max(current.endMs, next.endMs),
-      text: `${current.text} ${next.text}`
+      text: `${current.text} ${next.text}`,
+      audioFileName: current.audioFileName || next.audioFileName,
+      imageFileName: current.imageFileName || next.imageFileName,
+      customImagePath: current.customImagePath || next.customImagePath,
+      customAudioPath: current.customAudioPath || next.customAudioPath,
+      importedId: current.importedId || next.importedId
     };
 
     updated[rowIndex].cells = { ...updated[rowIndex].cells, [trackId]: merged };
@@ -431,7 +470,12 @@ export class SubtitleAlignerService {
       cueIds: [...prev.cueIds, ...current.cueIds],
       startMs: Math.min(prev.startMs, current.startMs),
       endMs: Math.max(prev.endMs, current.endMs),
-      text: `${prev.text} ${current.text}`
+      text: `${prev.text} ${current.text}`,
+      audioFileName: prev.audioFileName || current.audioFileName,
+      imageFileName: prev.imageFileName || current.imageFileName,
+      customImagePath: prev.customImagePath || current.customImagePath,
+      customAudioPath: prev.customAudioPath || current.customAudioPath,
+      importedId: prev.importedId || current.importedId
     };
 
     updated[rowIndex - 1].cells = { ...updated[rowIndex - 1].cells, [trackId]: merged };
@@ -444,6 +488,7 @@ export class SubtitleAlignerService {
    * Desvincula uma célula da linha atual, inserindo uma nova linha autônoma logo abaixo
    */
   public unlinkCell(rows: AlignedRow[], trackId: string, rowIndex: number): AlignedRow[] {
+    const trackHasImportedIds = rows.some(r => !!r.cells[trackId]?.importedId);
     const updated = [...rows];
     const cell = updated[rowIndex].cells[trackId];
     if (!cell) return rows;
@@ -456,10 +501,12 @@ export class SubtitleAlignerService {
       id: `row_unlinked_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       index: updated.length + 1,
       cells: { [trackId]: cell },
-      excluded: false
+      excluded: false,
+      customId: cell.importedId
     };
 
     updated.splice(rowIndex + 1, 0, newRow);
+    this.syncMovedImportedIds(updated, trackId, trackHasImportedIds);
 
     // Reindexar linhas
     updated.forEach((r, idx) => (r.index = idx + 1));

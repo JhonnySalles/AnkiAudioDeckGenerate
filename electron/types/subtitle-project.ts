@@ -63,6 +63,7 @@ export interface SubtitleCue {
   imageFileName?: string;
   customImagePath?: string;
   customAudioPath?: string;
+  importedId?: string;
 }
 
 export interface SubtitleTrack {
@@ -87,6 +88,7 @@ export interface AlignedCell {
   imageFileName?: string;
   customImagePath?: string;
   customAudioPath?: string;
+  importedId?: string;
 }
 
 export interface AlignedRow {
@@ -94,6 +96,8 @@ export interface AlignedRow {
   index: number;                  // Sequência visual
   cells: Record<string, AlignedCell | null>; // chave é trackId
   excluded?: boolean;
+  customId?: string;              // ID original importado de arquivo TXT/CSV
+  cardId?: string;                // ID final processado para exibição/exportação
 }
 
 export interface OutputColumnConfig {
@@ -114,6 +118,9 @@ export interface OutputConfig {
   mediaOutputDir?: string;        // Caminho persistido para a pasta de mídia gerada
   trimSilence?: boolean;          // Remover silêncios no início e fim do áudio
   normalizeAudio?: boolean;       // Normalizar volume do áudio (EBU R128 para MP3)
+  audioNameTemplate?: string;     // Template do nome do arquivo de áudio
+  imageNameTemplate?: string;     // Template do nome do arquivo de imagem
+  videoNameTemplate?: string;     // Template do nome do arquivo de vídeo
 }
 
 export interface SubtitleExportOptions {
@@ -132,6 +139,9 @@ export interface SubtitleExportOptions {
   videoWidth?: number;
   videoHeight?: number;
   videoBitrate?: string;
+  audioNameTemplate?: string;
+  imageNameTemplate?: string;
+  videoNameTemplate?: string;
 }
 
 export interface SubtitleExportProgress {
@@ -155,6 +165,8 @@ export interface SubtitleProject {
   groupByCounterpart?: boolean;   // Agrupar falas consecutivas da base pela legenda secundária (padrão: true)
   removeStyledLines?: boolean;    // Filtrar créditos (STAFF), músicas (OP/ED) e placas em legendas .ass (padrão: true)
   excludeNoCounterpart?: boolean; // Marcar como excluídas linhas que não possuem tradução (padrão: false)
+  idTemplate?: string;            // Template para geração automática do ID (ex: '{name} - {time}')
+  hasImportedId?: boolean;        // Indica se o projeto possui IDs selecionados via importação TXT/CSV
 }
 
 export interface CutAudioOptions {

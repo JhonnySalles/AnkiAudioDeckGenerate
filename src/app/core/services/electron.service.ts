@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, NgZone } from '@angular/core';
 
 export interface CardPayload {
   front: string;
@@ -79,11 +79,14 @@ export interface ElectronAPI {
   saveProjectDialog: (project: any, defaultPath?: string) => Promise<string | null>;
   saveProjectToPath: (filePath: string, project: any) => Promise<string>;
   loadProjectDialog: () => Promise<{ filePath: string; project: any } | null>;
+  loadProjectFromPath?: (filePath: string) => Promise<{ filePath: string; project: any }>;
+  registerRecentProject?: (filePath: string, name?: string) => Promise<boolean>;
 
   // DevTools & Menu
   toggleDevTools: () => Promise<void>;
   onMenuSwitchMode: (callback: (mode: string) => void) => () => void;
   onMenuTriggerAction: (callback: (action: string) => void) => () => void;
+  onMenuOpenRecentProject?: (callback: (filePath: string) => void) => () => void;
   onMainLog: (callback: (log: any) => void) => () => void;
 }
 
@@ -98,6 +101,9 @@ declare global {
 })
 export class ElectronService {
   public readonly isElectron = !!window.electronAPI;
+  public pendingRecentProjectPath: string | null = null;
+
+  constructor(private zone: NgZone) {}
 
   private get api(): ElectronAPI {
     if (!window.electronAPI) {
@@ -256,7 +262,9 @@ export class ElectronService {
 
   public onExportProgress(callback: (progress: any) => void): () => void {
     if (!this.isElectron || !this.api.onExportProgress) return () => {};
-    return this.api.onExportProgress(callback);
+    return this.api.onExportProgress((progress: any) => {
+      this.zone.run(() => callback(progress));
+    });
   }
 
   public async saveProjectDialog(project: any, defaultPath?: string): Promise<string | null> {
@@ -274,6 +282,17 @@ export class ElectronService {
     return await this.api.loadProjectDialog();
   }
 
+  public async loadProjectFromPath(filePath: string): Promise<{ filePath: string; project: any } | null> {
+    if (!this.isElectron || !this.api.loadProjectFromPath) return null;
+    return await this.api.loadProjectFromPath(filePath);
+  }
+
+  public async registerRecentProject(filePath: string, name?: string): Promise<void> {
+    if (this.isElectron && this.api.registerRecentProject && filePath) {
+      await this.api.registerRecentProject(filePath, name);
+    }
+  }
+
   // ================= DEVTOOLS & MENU =================
   public async toggleDevTools(): Promise<void> {
     if (this.isElectron) {
@@ -283,21 +302,36 @@ export class ElectronService {
 
   public onMenuSwitchMode(callback: (mode: string) => void): () => void {
     if (this.isElectron && this.api.onMenuSwitchMode) {
-      return this.api.onMenuSwitchMode(callback);
+      return this.api.onMenuSwitchMode((mode: string) => {
+        this.zone.run(() => callback(mode));
+      });
     }
     return () => {};
   }
 
   public onMenuTriggerAction(callback: (action: string) => void): () => void {
     if (this.isElectron && this.api.onMenuTriggerAction) {
-      return this.api.onMenuTriggerAction(callback);
+      return this.api.onMenuTriggerAction((action: string) => {
+        this.zone.run(() => callback(action));
+      });
+    }
+    return () => {};
+  }
+
+  public onMenuOpenRecentProject(callback: (filePath: string) => void): () => void {
+    if (this.isElectron && this.api.onMenuOpenRecentProject) {
+      return this.api.onMenuOpenRecentProject((filePath: string) => {
+        this.zone.run(() => callback(filePath));
+      });
     }
     return () => {};
   }
 
   public onMainLog(callback: (log: any) => void): () => void {
     if (this.isElectron && this.api.onMainLog) {
-      return this.api.onMainLog(callback);
+      return this.api.onMainLog((log: any) => {
+        this.zone.run(() => callback(log));
+      });
     }
     return () => {};
   }

@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, HostListener, ViewChild, ElementRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener, ViewChild, ElementRef, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ElectronService, AppSettings, AnkiConnectStatus, SaveCardResult, CardPayload } from './core/services/electron.service';
@@ -158,7 +158,8 @@ export class AppComponent implements OnInit, OnDestroy {
   constructor(
     public electronService: ElectronService,
     public lyricsParser: LyricsParserService,
-    public logService: LogService
+    public logService: LogService,
+    private cdr: ChangeDetectorRef
   ) {}
 
   public async ngOnInit(): Promise<void> {
@@ -169,6 +170,7 @@ export class AppComponent implements OnInit, OnDestroy {
     const unsubMode = this.electronService.onMenuSwitchMode((mode: string) => {
       if (mode === 'subtitles' || mode === 'music') {
         this.currentMode = mode;
+        this.cdr.detectChanges();
       }
     });
     this.unsubs.push(unsubMode);
@@ -176,13 +178,24 @@ export class AppComponent implements OnInit, OnDestroy {
     const unsubAction = this.electronService.onMenuTriggerAction((action: string) => {
       if (action === 'open-logs') {
         this.isLogConsoleOpen = true;
+        this.cdr.detectChanges();
       } else if (action === 'new-project' && this.currentMode === 'music') {
         this.cards = [];
         this.clearModalAudio();
         this.showToast('Novo projeto de música iniciado.', 'info');
+        this.cdr.detectChanges();
       }
     });
     this.unsubs.push(unsubAction);
+
+    const unsubRecent = this.electronService.onMenuOpenRecentProject((filePath: string) => {
+      if (this.currentMode !== 'subtitles') {
+        this.electronService.pendingRecentProjectPath = filePath;
+        this.currentMode = 'subtitles';
+        this.cdr.detectChanges();
+      }
+    });
+    this.unsubs.push(unsubRecent);
   }
 
   public ngOnDestroy(): void {

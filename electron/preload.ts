@@ -61,6 +61,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveProjectToPath: (filePath: string, project: any) =>
     ipcRenderer.invoke('project:save-to-path', filePath, project),
   loadProjectDialog: () => ipcRenderer.invoke('project:load-dialog'),
+  loadProjectFromPath: (filePath: string) => ipcRenderer.invoke('project:load-from-path', filePath),
+  registerRecentProject: (filePath: string, name?: string) =>
+    ipcRenderer.invoke('project:register-recent', filePath, name),
 
   // DevTools & Window Menu
   toggleDevTools: () => ipcRenderer.invoke('app:toggle-devtools'),
@@ -73,6 +76,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const sub = (_: any, action: string) => callback(action);
     ipcRenderer.on('menu:action', sub);
     return () => ipcRenderer.removeListener('menu:action', sub);
+  },
+  onMenuOpenRecentProject: (callback: (filePath: string) => void) => {
+    const sub = (_: any, filePath: string) => callback(filePath);
+    ipcRenderer.on('menu:open-recent-project', sub);
+    return () => ipcRenderer.removeListener('menu:open-recent-project', sub);
   },
   onMainLog: (callback: (log: any) => void) => {
     const sub = (_: any, log: any) => callback(log);

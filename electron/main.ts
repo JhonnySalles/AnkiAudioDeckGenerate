@@ -105,13 +105,130 @@ if (!gotTheLock) {
   });
 }
 
+interface RecentProjectEntry {
+  filePath: string;
+  name: string;
+  lastSavedAt: number;
+}
+
+const MAX_RECENT_PROJECTS = 15;
+let recentProjects: RecentProjectEntry[] = [];
+
+function getRecentProjectsFilePath(): string {
+  return path.join(app.getPath('userData'), 'recent-projects.json');
+}
+
+function loadRecentProjects(): void {
+  try {
+    const file = getRecentProjectsFilePath();
+    if (fs.existsSync(file)) {
+      const raw = fs.readFileSync(file, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        recentProjects = parsed
+          .filter((e: any) => e && typeof e.filePath === 'string' && e.filePath.trim().length > 0)
+          .sort((a: RecentProjectEntry, b: RecentProjectEntry) => (b.lastSavedAt || 0) - (a.lastSavedAt || 0))
+          .slice(0, MAX_RECENT_PROJECTS);
+      }
+    }
+  } catch (err: any) {
+    console.warn('[RecentProjects] Falha ao carregar histórico:', err.message);
+    recentProjects = [];
+  }
+}
+
+function saveRecentProjects(): void {
+  try {
+    const file = getRecentProjectsFilePath();
+    fs.writeFileSync(file, JSON.stringify(recentProjects, null, 2), 'utf-8');
+  } catch (err: any) {
+    console.warn('[RecentProjects] Falha ao salvar histórico:', err.message);
+  }
+}
+
+function addRecentProject(filePath: string, name?: string): void {
+  if (!filePath || !filePath.trim()) return;
+  const normalizedTarget = path.resolve(filePath).toLowerCase();
+  const displayName = (name && name.trim()) ? name.trim() : path.basename(filePath, path.extname(filePath));
+
+  recentProjects = recentProjects.filter(e => path.resolve(e.filePath).toLowerCase() !== normalizedTarget);
+  recentProjects.unshift({
+    filePath,
+    name: displayName,
+    lastSavedAt: Date.now()
+  });
+  recentProjects.sort((a, b) => b.lastSavedAt - a.lastSavedAt);
+  if (recentProjects.length > MAX_RECENT_PROJECTS) {
+    recentProjects = recentProjects.slice(0, MAX_RECENT_PROJECTS);
+  }
+
+  saveRecentProjects();
+  createApplicationMenu();
+}
+
+function removeRecentProject(filePath: string): void {
+  const normalizedTarget = path.resolve(filePath).toLowerCase();
+  recentProjects = recentProjects.filter(e => path.resolve(e.filePath).toLowerCase() !== normalizedTarget);
+  saveRecentProjects();
+  createApplicationMenu();
+}
+
+function clearRecentProjects(): void {
+  recentProjects = [];
+  saveRecentProjects();
+  createApplicationMenu();
+}
+
+function formatRecentDate(timestamp: number): string {
+  try {
+    const d = new Date(timestamp);
+    const day = d.getDate().toString().padStart(2, '0');
+    const month = (d.getMonth() + 1).toString().padStart(2, '0');
+    const hours = d.getHours().toString().padStart(2, '0');
+    const mins = d.getMinutes().toString().padStart(2, '0');
+    return `${day}/${month} ${hours}:${mins}`;
+  } catch {
+    return '';
+  }
+}
+
+function buildRecentProjectsSubmenu(): MenuItemConstructorOptions[] {
+  if (recentProjects.length === 0) {
+    return [
+      {
+        label: '(Nenhum projeto recente)',
+        enabled: false
+      }
+    ];
+  }
+
+  const items: MenuItemConstructorOptions[] = recentProjects.map((entry) => {
+    const timeLabel = entry.lastSavedAt ? ` — ${formatRecentDate(entry.lastSavedAt)}` : '';
+    return {
+      label: `${entry.name}${timeLabel}`,
+      toolTip: entry.filePath,
+      click: () => {
+        mainWindow?.webContents.send('menu:open-recent-project', entry.filePath);
+      }
+    };
+  });
+
+  items.push({ type: 'separator' });
+  items.push({
+    label: 'Limpar Histórico',
+    click: () => clearRecentProjects()
+  });
+
+  return items;
+}
+
 function createApplicationMenu(): void {
   const template: MenuItemConstructorOptions[] = [
     {
       label: 'Arquivo',
       submenu: [
         {
-          label: 'Novo Projeto de Legendas',
+          label: 'Novo Projeto',
           accelerator: 'CmdOrCtrl+N',
           click: () => mainWindow?.webContents.send('menu:action', 'new-project')
         },
@@ -119,6 +236,10 @@ function createApplicationMenu(): void {
           label: 'Abrir Projeto...',
           accelerator: 'CmdOrCtrl+O',
           click: () => mainWindow?.webContents.send('menu:action', 'open-project')
+        },
+        {
+          label: 'Histórico de Projetos',
+          submenu: buildRecentProjectsSubmenu()
         },
         {
           label: 'Salvar Projeto',
@@ -610,6 +731,7 @@ function registerIpcHandlers(): void {
         fs.mkdirSync(dir, { recursive: true });
       }
       fs.writeFileSync(filePath, JSON.stringify(project, null, 2), 'utf-8');
+      addRecentProject(filePath, project?.mediaName);
       console.log(`[Project] Projeto salvo com sucesso em: ${filePath}`);
       return filePath;
     } catch (err: any) {
@@ -620,7 +742,19 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('project:save-dialog', async (_event, project: SubtitleProject, defaultPath?: string) => {
     if (!mainWindow) return null;
-    const defaultName = defaultPath || `${project?.mediaName || 'projeto'}.ankisubs.json`;
+    const sanitizeDialogFileName = (rawName: string): string =>
+      rawName.replace(/[\\/:*?"<>|]/g, '').replace(/\s{2,}/g, ' ').trim() || 'projeto';
+
+    let defaultName: string;
+    if (defaultPath && defaultPath.trim().length > 0) {
+      const safeBase = sanitizeDialogFileName(path.basename(defaultPath));
+      defaultName = /[\\/]/.test(defaultPath)
+        ? path.join(path.dirname(defaultPath), safeBase)
+        : safeBase;
+    } else {
+      defaultName = `${sanitizeDialogFileName(project?.mediaName || 'projeto')}.ankisubs.json`;
+    }
+
     const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
       title: 'Salvar Projeto de Legendas Como...',
       defaultPath: defaultName,
@@ -632,6 +766,7 @@ function registerIpcHandlers(): void {
       fs.mkdirSync(dir, { recursive: true });
     }
     fs.writeFileSync(filePath, JSON.stringify(project, null, 2), 'utf-8');
+    addRecentProject(filePath, project?.mediaName);
     console.log(`[Project] Projeto salvo como: ${filePath}`);
     return filePath;
   });
@@ -647,11 +782,32 @@ function registerIpcHandlers(): void {
     const filePath = filePaths[0];
     const content = fs.readFileSync(filePath, 'utf-8');
     const project = JSON.parse(content) as SubtitleProject;
+    addRecentProject(filePath, project?.mediaName);
     console.log(`[Project] Projeto carregado: ${filePath} (${project.mediaName})`);
     return {
       filePath,
       project
     };
+  });
+
+  ipcMain.handle('project:load-from-path', async (_event, filePath: string) => {
+    if (!filePath || !fs.existsSync(filePath)) {
+      removeRecentProject(filePath);
+      throw new Error(`Arquivo de projeto não encontrado no disco: ${filePath}`);
+    }
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const project = JSON.parse(content) as SubtitleProject;
+    addRecentProject(filePath, project?.mediaName);
+    console.log(`[Project] Projeto carregado pelo histórico: ${filePath} (${project.mediaName})`);
+    return {
+      filePath,
+      project
+    };
+  });
+
+  ipcMain.handle('project:register-recent', (_event, filePath: string, name?: string) => {
+    addRecentProject(filePath, name);
+    return true;
   });
 }
 
@@ -763,6 +919,7 @@ app.whenReady().then(() => {
   });
 
   registerIpcHandlers();
+  loadRecentProjects();
   createApplicationMenu();
   createWindow();
   createTray();

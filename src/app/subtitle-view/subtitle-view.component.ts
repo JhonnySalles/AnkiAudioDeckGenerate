@@ -1,7 +1,7 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef, HostListener } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, HostListener, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ScrollingModule } from '@angular/cdk/scrolling';
+import { ScrollingModule, CdkVirtualScrollViewport } from '@angular/cdk/scrolling';
 import { ElectronService } from '../core/services/electron.service';
 import {
   SubtitleParserService,
@@ -29,6 +29,8 @@ import {
 })
 export class SubtitleViewComponent implements OnInit, OnDestroy {
 
+  @ViewChild(CdkVirtualScrollViewport) private viewport?: CdkVirtualScrollViewport;
+
   public project: SubtitleProject = {
     id: 'proj_' + Date.now(),
     mediaName: 'ReZero_Episodio_01',
@@ -41,6 +43,8 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     groupByCounterpart: true,
     removeStyledLines: true,
     excludeNoCounterpart: false,
+    idTemplate: 'ReZero_Episodio_01 - {time}',
+    hasImportedId: false,
     output: {
       separator: '\t',
       quoteMode: 'when-needed',
@@ -48,7 +52,10 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       lineSuffix: '',
       writeAnkiHeaders: true,
       columns: ['id', 'seq', 'sound_1', 'image_1', 'text_1', 'sound_2', 'image_2', 'text_2'],
-      tags: ['ReZero', 'Japanese']
+      tags: ['ReZero', 'Japanese'],
+      audioNameTemplate: '{id}_{track}_{seq}_{start}-{end}',
+      imageNameTemplate: '{id}_{track}_{seq}_{mid}',
+      videoNameTemplate: '{id}_{track}_{seq}_{start}-{end}'
     }
   };
 
@@ -121,6 +128,7 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
   public lastExportResult: { txtPath: string; exportedCount: number } | null = null;
   private progressUnsub: (() => void) | null = null;
   private menuUnsub: (() => void) | null = null;
+  private recentProjectUnsub: (() => void) | null = null;
 
   // Snapshot visualizer modal state
   public previewSnapshotState: {
@@ -176,6 +184,7 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     const res = this.history.undo(this.project.rows);
     if (res) {
       this.project.rows = res.rows;
+      this.reprocessIds();
       this.showToast(`Desfeito: ${res.description}`, 'info');
       this.cdr.detectChanges();
     } else {
@@ -187,6 +196,7 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     const res = this.history.redo(this.project.rows);
     if (res) {
       this.project.rows = res.rows;
+      this.reprocessIds();
       this.showToast(`Refeito: ${res.description}`, 'info');
       this.cdr.detectChanges();
     } else {
@@ -229,6 +239,17 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       }
     });
 
+    // Ouvinte para abrir projeto recente via menu Histórico de Projetos
+    this.recentProjectUnsub = this.electron.onMenuOpenRecentProject((filePath: string) => {
+      void this.openRecentProject(filePath);
+    });
+
+    if (this.electron.pendingRecentProjectPath) {
+      const pendingPath = this.electron.pendingRecentProjectPath;
+      this.electron.pendingRecentProjectPath = null;
+      void this.openRecentProject(pendingPath);
+    }
+
     // Recupera último caminho conhecido se projeto não tem caminho
     if (!this.currentProjectFilePath) {
       const lastPath = localStorage.getItem('last_subtitle_project_path');
@@ -241,6 +262,7 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
   public ngOnDestroy(): void {
     if (this.progressUnsub) this.progressUnsub();
     if (this.menuUnsub) this.menuUnsub();
+    if (this.recentProjectUnsub) this.recentProjectUnsub();
     if (this.audioElement) {
       this.audioElement.pause();
       this.audioElement = null;
@@ -271,9 +293,10 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     this.project.mediaSources.push(newSource);
 
     // Se o nome do projeto ainda for genérico, sugerir com base no nome do arquivo (sem extensão)
-    if (this.project.mediaName === 'ReZero_Episodio_01') {
-      const baseClean = filename.replace(/\.[^/.]+$/, '');
-      this.project.mediaName = baseClean;
+    const baseClean = filename.replace(/\.[^/.]+$/, '');
+    if (baseClean) {
+      this.applyDefaultNameToProject(baseClean);
+      this.reprocessIds();
     }
 
     // Se houver faixas sem mediaSource, atribuir esta
@@ -325,8 +348,24 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
   }
 
   // ================= LIMPEZA / NOVO PROJETO =================
+  private closeAllModalsAndTransientStates(): void {
+    this.isOutputModalOpen = false;
+    this.isConfigTrackModalOpen = false;
+    this.isExportModalOpen = false;
+    this.isShiftModalOpen = false;
+    this.isAnkiImportModalOpen = false;
+    this.isExporting = false;
+    this.isCancellingExport = false;
+    this.previewSnapshotState = null;
+    this.draggingCardState = null;
+    this.dragOverTarget = null;
+    this.isDraggingOver = false;
+    this.dragCounter = 0;
+  }
+
   public resetProject(): void {
     this.stopAudio();
+    this.closeAllModalsAndTransientStates();
     this.history.clear();
     this.currentProjectFilePath = null;
     localStorage.removeItem('last_subtitle_project_path');
@@ -343,6 +382,8 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       groupByCounterpart: true,
       removeStyledLines: true,
       excludeNoCounterpart: false,
+      idTemplate: 'Novo_Projeto - {time}',
+      hasImportedId: false,
       output: {
         separator: '\t',
         quoteMode: 'when-needed',
@@ -350,14 +391,18 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
         lineSuffix: '',
         writeAnkiHeaders: true,
         columns: ['id', 'seq', 'sound_1', 'image_1', 'text_1'],
-        tags: []
+        tags: [],
+        audioNameTemplate: '{id}_{track}_{seq}_{start}-{end}',
+        imageNameTemplate: '{id}_{track}_{seq}_{mid}',
+        videoNameTemplate: '{id}_{track}_{seq}_{start}-{end}'
       }
     };
 
     this.availableExportColumns = [];
     this.lastExportResult = null;
-    this.previewSnapshotState = null;
+    this.exportProgress = { current: 0, total: 0, percentage: 0, status: '' };
     this.ankiImportResult = null;
+    this.ankiImportMappings = [];
     this.currentRawImportContent = null;
     this.exportOptions.outputTxtPath = '';
     this.exportOptions.mediaOutputDir = '';
@@ -403,6 +448,7 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       if (fromIndex !== toIndex) {
         this.history.pushState(this.project.rows, `Mover bloco da linha ${fromIndex + 1} para ${toIndex + 1}`);
         this.project.rows = this.aligner.moveBlockToRow(this.project.rows, trackId, fromIndex, toIndex);
+        this.reprocessIds();
         this.showToast(`Bloco de falas movido para a linha ${toIndex + 1}!`, 'success');
       }
 
@@ -493,6 +539,9 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
           const parsed = JSON.parse(text);
           if (parsed && (parsed.tracks || parsed.rows || parsed.mediaName)) {
             this.applyLoadedProject(parsed, filePath || file.name);
+            if (filePath) {
+              void this.electron.registerRecentProject(filePath, parsed.mediaName);
+            }
             continue;
           }
         } catch (err: any) {
@@ -642,7 +691,7 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
 
   public confirmAnkiImport(): void {
     if (!this.ankiImportResult) return;
-    const { episodeName, tracks } = this.parser.buildCuesFromAnkiImport(
+    const { episodeName, hasImportedId, tracks } = this.parser.buildCuesFromAnkiImport(
       this.ankiImportResult,
       this.ankiImportMappings
     );
@@ -652,8 +701,18 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       return;
     }
 
-    if (episodeName && (!this.project.mediaName || this.project.mediaName === 'ReZero_Episodio_01' || this.project.mediaName === 'Deck')) {
-      this.project.mediaName = episodeName;
+    const hadTracks = this.project.tracks.length > 0;
+    if (!hadTracks) {
+      this.project.hasImportedId = hasImportedId;
+    } else if (hasImportedId) {
+      this.project.hasImportedId = true;
+    }
+
+    if (episodeName) {
+      this.applyDefaultNameToProject(episodeName);
+    } else {
+      const baseFromFile = this.ankiImportResult.fileName.replace(/\.[^/.]+$/, '') || 'Deck';
+      this.applyDefaultNameToProject(baseFromFile);
     }
 
     const defaultSourceId = this.project.mediaSources[0]?.id || '';
@@ -717,6 +776,13 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       removeStyledLines: this.project.removeStyledLines !== false
     });
     const isFirst = this.project.tracks.length === 0;
+    if (isFirst) {
+      this.project.hasImportedId = false;
+      const baseClean = filename.replace(/\.[^/.]+$/, '');
+      if (baseClean) {
+        this.applyDefaultNameToProject(baseClean);
+      }
+    }
 
     let label = isFirst ? 'JP' : 'PT';
     if (/pt|por|bra/i.test(filename)) label = 'PT';
@@ -749,7 +815,14 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
 
   public removeTrack(trackIndex: number): void {
     const t = this.project.tracks[trackIndex];
+    if (!t) return;
     this.project.tracks.splice(trackIndex, 1);
+
+    for (const r of this.project.rows) {
+      if (r.cells && r.cells[t.id]) {
+        delete r.cells[t.id];
+      }
+    }
 
     if (this.project.timingTrackId === t.id) {
       this.project.timingTrackId = this.project.tracks[0]?.id || '';
@@ -759,7 +832,18 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     }
 
     this.rebuildColumns();
+    if (this.project.tracks.length === 0) {
+      this.project.rows = [];
+      this.availableExportColumns = [];
+      this.project.hasImportedId = false;
+      this.cdr.detectChanges();
+      this.showToast(`Coluna '${t.label}' removida.`, 'info');
+      return;
+    }
+
+    this.project.hasImportedId = this.project.tracks.some(tr => tr.cues?.some(c => !!c.importedId?.trim()));
     this.autoAlign();
+    this.cdr.detectChanges();
   }
 
   public rebuildColumns(): void {
@@ -788,39 +872,46 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       joinSentences: true,
       excludeNoCounterpart: this.project.excludeNoCounterpart === true
     });
+    this.reprocessIds();
     this.showToast(`Grid alinhada com tolerância de ${tolerance}ms: ${this.project.rows.length} falas encontradas.`, 'info');
   }
 
   public shiftTrack(trackId: string, fromRowIndex: number, direction: 'down' | 'up'): void {
     this.history.pushState(this.project.rows, `Deslocar linhas ${direction === 'down' ? '↓' : '↑'} (linha ${fromRowIndex + 1})`);
     this.project.rows = this.aligner.shiftColumn(this.project.rows, trackId, fromRowIndex, direction);
+    this.reprocessIds();
     this.showToast(`Faixa deslocada para ${direction === 'down' ? 'baixo' : 'cima'} a partir da linha ${fromRowIndex + 1}.`, 'info');
   }
 
   public moveCell(trackId: string, rowIndex: number, direction: 'up' | 'down'): void {
     this.history.pushState(this.project.rows, `Mover célula ${direction === 'up' ? '▲' : '▼'} (linha ${rowIndex + 1})`);
     this.project.rows = this.aligner.moveCell(this.project.rows, trackId, rowIndex, direction);
+    this.reprocessIds();
   }
 
   public mergeWithNext(trackId: string, rowIndex: number): void {
     this.history.pushState(this.project.rows, `Mesclar com próxima (linha ${rowIndex + 1})`);
     this.project.rows = this.aligner.mergeCellWithNext(this.project.rows, trackId, rowIndex);
+    this.reprocessIds();
   }
 
   public mergeWithPrevious(trackId: string, rowIndex: number): void {
     this.history.pushState(this.project.rows, `Mesclar com anterior (linha ${rowIndex + 1})`);
     this.project.rows = this.aligner.mergeCellWithPrevious(this.project.rows, trackId, rowIndex);
+    this.reprocessIds();
   }
 
   public unlinkCell(trackId: string, rowIndex: number): void {
     this.history.pushState(this.project.rows, `Desvincular fala (linha ${rowIndex + 1})`);
     this.project.rows = this.aligner.unlinkCell(this.project.rows, trackId, rowIndex);
+    this.reprocessIds();
     this.showToast(`Fala desvinculada para nova linha autônoma.`, 'info');
   }
 
   public clearCell(trackId: string, rowIndex: number): void {
     this.history.pushState(this.project.rows, `Limpar célula (linha ${rowIndex + 1})`);
     this.project.rows = this.aligner.clearCell(this.project.rows, trackId, rowIndex);
+    this.reprocessIds();
     this.showToast(`Célula da linha ${rowIndex + 1} limpa.`, 'info');
   }
 
@@ -862,14 +953,51 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       this.shiftModalDeltaMs,
       this.shiftModalScope
     );
+    this.reprocessIds();
     this.showToast(`Deslocamento de ${this.shiftModalDeltaMs > 0 ? '+' : ''}${this.shiftModalDeltaMs}ms aplicado ${scopeDesc}.`, 'success');
     this.closeShiftModal();
+    this.cdr.detectChanges();
+  }
+
+  public isAllRowsIncluded(): boolean {
+    return this.project.rows.length > 0 && this.project.rows.every(r => !r.excluded);
+  }
+
+  public isSomeRowsIncluded(): boolean {
+    if (this.project.rows.length === 0) return false;
+    const hasIncluded = this.project.rows.some(r => !r.excluded);
+    const hasExcluded = this.project.rows.some(r => !!r.excluded);
+    return hasIncluded && hasExcluded;
+  }
+
+  public toggleAllRowsExcluded(checkboxEl?: HTMLInputElement): void {
+    if (this.project.rows.length === 0) return;
+
+    // Se todas estiverem marcadas -> desmarca todas; se vazio ou indeterminado (-) -> marca todas.
+    const shouldIncludeAll = !this.isAllRowsIncluded();
+    this.history.pushState(
+      this.project.rows,
+      shouldIncludeAll ? 'Marcar todos os cards para exportação' : 'Desmarcar todos os cards da exportação'
+    );
+
+    for (const row of this.project.rows) {
+      row.excluded = !shouldIncludeAll;
+    }
+
+    if (checkboxEl) {
+      checkboxEl.checked = shouldIncludeAll;
+      checkboxEl.indeterminate = false;
+    }
+
+    this.reprocessIds();
     this.cdr.detectChanges();
   }
 
   public toggleRowExcluded(row: AlignedRow): void {
     this.history.pushState(this.project.rows, row.excluded ? 'Incluir fala' : 'Excluir fala');
     row.excluded = !row.excluded;
+    this.reprocessIds();
+    this.cdr.detectChanges();
   }
 
   public nudgeTime(cell: AlignedCell, type: 'start' | 'end', deltaMs: number): void {
@@ -879,6 +1007,7 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     } else {
       cell.endMs = Math.max(cell.startMs + 100, cell.endMs + deltaMs);
     }
+    this.reprocessIds();
   }
 
   // ================= PRÉVIA DE ÁUDIO E SNAPSHOT =================
@@ -1112,7 +1241,24 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     }
   }
 
+  public async openRecentProject(filePath: string): Promise<void> {
+    try {
+      const res = await this.electron.loadProjectFromPath(filePath);
+      if (res && res.project) {
+        this.applyLoadedProject(res.project, res.filePath);
+      } else {
+        this.showToast('Arquivo de projeto não encontrado ou inválido. Removido do histórico.', 'error');
+      }
+    } catch (err: any) {
+      console.error('Erro ao abrir projeto recente:', err);
+      this.showToast('Falha ao abrir projeto recente.', 'error');
+    }
+  }
+
   public applyLoadedProject(loadedProject: SubtitleProject, filePath?: string): void {
+    this.stopAudio();
+    this.closeAllModalsAndTransientStates();
+
     this.project = {
       id: loadedProject.id || ('proj_' + Date.now()),
       mediaName: loadedProject.mediaName || 'Projeto',
@@ -1125,6 +1271,12 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       groupByCounterpart: loadedProject.groupByCounterpart !== undefined ? loadedProject.groupByCounterpart : true,
       removeStyledLines: loadedProject.removeStyledLines !== undefined ? loadedProject.removeStyledLines : true,
       excludeNoCounterpart: loadedProject.excludeNoCounterpart !== undefined ? loadedProject.excludeNoCounterpart : false,
+      idTemplate: (loadedProject.idTemplate || '{name} - {time}').replace(/\{name\}/gi, loadedProject.mediaName || 'Projeto'),
+      hasImportedId: Boolean(
+        loadedProject.hasImportedId ||
+        loadedProject.rows?.some(r => !!r.customId?.trim()) ||
+        loadedProject.tracks?.some(t => t.cues?.some(c => !!c.importedId?.trim()))
+      ),
       output: loadedProject.output || {
         separator: '\t',
         quoteMode: 'when-needed',
@@ -1167,10 +1319,26 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
       this.exportOptions.normalizeAudio = this.project.output.normalizeAudio;
     }
 
+    if (!this.project.output.audioNameTemplate) {
+      this.project.output.audioNameTemplate = '{id}_{track}_{seq}_{start}-{end}';
+    }
+    if (!this.project.output.imageNameTemplate) {
+      this.project.output.imageNameTemplate = '{id}_{track}_{seq}_{mid}';
+    }
+    if (!this.project.output.videoNameTemplate) {
+      this.project.output.videoNameTemplate = '{id}_{track}_{seq}_{start}-{end}';
+    }
+
     this.rebuildColumns();
+    this.reprocessIds();
     this.history.clear();
     this.showToast(`Projeto carregado: ${this.project.mediaName}`, 'success');
     this.cdr.detectChanges();
+    setTimeout(() => {
+      this.viewport?.checkViewportSize();
+      this.viewport?.scrollToIndex(0);
+      this.cdr.detectChanges();
+    }, 0);
   }
 
   // ================= EXPORTAR PARA ANKI =================
@@ -1240,6 +1408,12 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     this.initExportColumns();
     this.lastExportResult = null;
     this.isExportModalOpen = true;
+  }
+
+  public onOutputTxtPathChange(value: string): void {
+    if (!value || !value.trim()) {
+      this.exportOptions.mediaOutputDir = '';
+    }
   }
 
   public async browseExportTxtPath(): Promise<void> {
@@ -1321,7 +1495,10 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
         imageHeight: settings?.imageHeight,
         videoWidth: settings?.videoWidth,
         videoHeight: settings?.videoHeight,
-        videoBitrate: settings?.videoBitrate
+        videoBitrate: settings?.videoBitrate,
+        audioNameTemplate: this.project.output?.audioNameTemplate,
+        imageNameTemplate: this.project.output?.imageNameTemplate,
+        videoNameTemplate: this.project.output?.videoNameTemplate
       });
 
       if (result.cancelled) {
@@ -1369,6 +1546,286 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
 
   public getMediaSource(mediaSourceId: string): MediaSource | undefined {
     return this.project.mediaSources.find((s: MediaSource) => s.id === mediaSourceId);
+  }
+
+  // ================= FORMATAÇÃO DE ID E NOMES DE SAÍDA =================
+  public readonly idFormatTags = [
+    { token: '{seq}', label: 'Sequência' },
+    { token: '{time}', label: 'Tempo ID' },
+    { token: '{start}', label: 'Tempo Inicial' },
+    { token: '{end}', label: 'Tempo Final' },
+    { token: '{mid}', label: 'Tempo Médio' },
+    { token: '{track}', label: 'Faixa' }
+  ];
+  private lastIdTemplateInput: HTMLInputElement | null = null;
+
+  public readonly mediaNameTags = [
+    { token: '{id}', label: 'ID' },
+    { token: '{seq}', label: 'Sequência' },
+    { token: '{start}', label: 'Tempo Inicial' },
+    { token: '{end}', label: 'Tempo Final' },
+    { token: '{mid}', label: 'Tempo Médio' },
+    { token: '{track}', label: 'Faixa' }
+  ];
+  public activeTemplateTarget: 'audio' | 'image' | 'video' = 'audio';
+  private lastFocusedTemplateInput: HTMLInputElement | null = null;
+
+  private applyDefaultNameToProject(baseName: string): void {
+    const clean = (baseName || '').trim();
+    if (!clean) return;
+    if (!this.project.mediaName || this.project.mediaName === 'ReZero_Episodio_01' || this.project.mediaName === 'Novo_Projeto' || this.project.mediaName === 'Deck') {
+      this.project.mediaName = clean;
+    }
+    const curTpl = (this.project.idTemplate || '').trim();
+    if (!curTpl || curTpl === 'ReZero_Episodio_01 - {time}' || curTpl === 'Novo_Projeto - {time}' || curTpl === '{name} - {time}') {
+      this.project.idTemplate = `${clean} - {time}`;
+    }
+  }
+
+  private formatIdTemplate(
+    template: string | undefined,
+    vars: { seq: string; time: string; start: string; end: string; mid: string; track: string }
+  ): string {
+    const fallbackName = (this.project.mediaName || 'Deck').trim() || 'Deck';
+    const rawTemplate = (template && template.trim().length > 0) ? template : `${fallbackName} - {time}`;
+    const formatted = rawTemplate
+      .replace(/\{seq\}/gi, vars.seq)
+      .replace(/\{time\}/gi, vars.time)
+      .replace(/\{start\}/gi, vars.start)
+      .replace(/\{end\}/gi, vars.end)
+      .replace(/\{mid\}/gi, vars.mid)
+      .replace(/\{track\}/gi, vars.track)
+      .trim();
+
+    return formatted || `${fallbackName} - ${vars.time}`;
+  }
+
+  public onIdTemplateFocus(event: FocusEvent): void {
+    this.lastIdTemplateInput = event.target as HTMLInputElement;
+  }
+
+  public onIdTemplateDrop(event: DragEvent): void {
+    if (this.project.hasImportedId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const token = event.dataTransfer?.getData('text/plain') || '';
+    if (!token) return;
+    const input = event.target as HTMLInputElement;
+    this.lastIdTemplateInput = input;
+    this.project.idTemplate = this.insertTokenAtCursor(this.project.idTemplate || '', token, input);
+    this.reprocessIds();
+  }
+
+  public insertTagInIdTemplate(token: string): void {
+    if (this.project.hasImportedId) return;
+    this.project.idTemplate = this.insertTokenAtCursor(this.project.idTemplate || '', token, this.lastIdTemplateInput);
+    this.reprocessIds();
+  }
+
+  private buildCueImportedIdMap(): Map<string, string> {
+    const map = new Map<string, string>();
+    for (const track of (this.project.tracks || [])) {
+      for (const cue of (track.cues || [])) {
+        if (cue.importedId && cue.importedId.trim().length > 0) {
+          map.set(cue.id, cue.importedId.trim());
+        }
+      }
+    }
+    return map;
+  }
+
+  private resolveRowImportedId(row: AlignedRow, cueIdMap?: Map<string, string>): string {
+    if (row.customId && row.customId.trim().length > 0) {
+      return row.customId.trim();
+    }
+    const cells = Object.values(row.cells || {});
+    for (const cell of cells) {
+      if (cell?.importedId && cell.importedId.trim().length > 0) {
+        return cell.importedId.trim();
+      }
+    }
+    if (cueIdMap && cueIdMap.size > 0) {
+      for (const cell of cells) {
+        if (!cell?.cueIds) continue;
+        for (const cId of cell.cueIds) {
+          const found = cueIdMap.get(cId);
+          if (found) return found;
+        }
+      }
+    }
+    return '';
+  }
+
+  public reprocessIds(): void {
+    const rows = this.project.rows || [];
+    const activeRowsCount = rows.filter(r => !r?.excluded).length;
+    const padLength = Math.max(4, String(activeRowsCount || rows.length).length);
+    const tracks = this.project.tracks || [];
+    const seqTrack = tracks.find(t => t.id === this.project.sequenceTrackId) || tracks[0];
+    const seqTrackLabel = (seqTrack?.label || 'Faixa').trim();
+    const cueIdMap = this.project.hasImportedId ? this.buildCueImportedIdMap() : undefined;
+
+    let activeSeq = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row.excluded) {
+        activeSeq++;
+      }
+      const seqNum = row.excluded ? (i + 1) : activeSeq;
+      const seqStr = String(seqNum).padStart(padLength, '0');
+
+      const cellsObj = row.cells || {};
+      const timingCell = cellsObj[this.project.timingTrackId] || Object.values(cellsObj).find(c => c !== null) || null;
+      const startMs = timingCell ? timingCell.startMs : 0;
+      const endMs = timingCell ? timingCell.endMs : 0;
+      const midMs = Math.round((startMs + endMs) / 2);
+
+      const importedId = this.project.hasImportedId ? this.resolveRowImportedId(row, cueIdMap) : '';
+      if (importedId) {
+        row.customId = importedId;
+        row.cardId = importedId;
+      } else {
+        row.cardId = this.formatIdTemplate(this.project.idTemplate, {
+          seq: seqStr,
+          time: this.parser.msToIdTime(startMs),
+          start: this.parser.msToFileNameTime(startMs),
+          end: this.parser.msToFileNameTime(endMs),
+          mid: this.parser.msToFileNameTime(midMs),
+          track: seqTrackLabel
+        });
+      }
+    }
+    this.cdr.detectChanges();
+  }
+
+  public getIdFormatPreview(): string {
+    const firstRow = (this.project.rows || []).find(r => !r.excluded) || this.project.rows?.[0];
+    if (this.project.hasImportedId) {
+      const imported = firstRow ? this.resolveRowImportedId(firstRow, this.buildCueImportedIdMap()) : '';
+      return imported || 'ID selecionado na importação (.txt)';
+    }
+
+    const tracks = this.project.tracks || [];
+    const seqTrack = tracks.find(t => t.id === this.project.sequenceTrackId) || tracks[0];
+    const seqTrackLabel = (seqTrack?.label || 'JP').trim();
+    const cellsObj = firstRow?.cells || {};
+    const timingCell = cellsObj[this.project.timingTrackId] || Object.values(cellsObj).find(c => c !== null) || null;
+    const startMs = timingCell ? timingCell.startMs : 83450;
+    const endMs = timingCell ? timingCell.endMs : 86100;
+    const midMs = Math.round((startMs + endMs) / 2);
+
+    return this.formatIdTemplate(this.project.idTemplate, {
+      seq: '0001',
+      time: this.parser.msToIdTime(startMs),
+      start: this.parser.msToFileNameTime(startMs),
+      end: this.parser.msToFileNameTime(endMs),
+      mid: this.parser.msToFileNameTime(midMs),
+      track: seqTrackLabel
+    });
+  }
+
+  public openOutputModal(): void {
+    if (!this.project.output.audioNameTemplate) {
+      this.project.output.audioNameTemplate = '{id}_{track}_{seq}_{start}-{end}';
+    }
+    if (!this.project.output.imageNameTemplate) {
+      this.project.output.imageNameTemplate = '{id}_{track}_{seq}_{mid}';
+    }
+    if (!this.project.output.videoNameTemplate) {
+      this.project.output.videoNameTemplate = '{id}_{track}_{seq}_{start}-{end}';
+    }
+    this.isOutputModalOpen = true;
+  }
+
+  public onTemplateFocus(target: 'audio' | 'image' | 'video', event: FocusEvent): void {
+    this.activeTemplateTarget = target;
+    this.lastFocusedTemplateInput = event.target as HTMLInputElement;
+  }
+
+  public onTagDragStart(event: DragEvent, token: string): void {
+    if (event.dataTransfer) {
+      event.dataTransfer.setData('text/plain', token);
+      event.dataTransfer.effectAllowed = 'copy';
+    }
+  }
+
+  public onTemplateDragOver(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
+  }
+
+  public onTemplateDrop(event: DragEvent, target: 'audio' | 'image' | 'video'): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const token = event.dataTransfer?.getData('text/plain') || '';
+    if (!token) return;
+    const input = event.target as HTMLInputElement;
+    this.activeTemplateTarget = target;
+    this.lastFocusedTemplateInput = input;
+    this.applyTokenToTemplate(target, token, input);
+  }
+
+  public insertTagInTemplate(token: string): void {
+    this.applyTokenToTemplate(this.activeTemplateTarget, token, this.lastFocusedTemplateInput);
+  }
+
+  private insertTokenAtCursor(current: string, token: string, input: HTMLInputElement | null): string {
+    if (input && typeof input.selectionStart === 'number' && typeof input.selectionEnd === 'number') {
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      const updated = current.slice(0, start) + token + current.slice(end);
+      setTimeout(() => {
+        input.focus();
+        const newPos = start + token.length;
+        input.setSelectionRange(newPos, newPos);
+      }, 0);
+      return updated;
+    }
+    return current + token;
+  }
+
+  private applyTokenToTemplate(target: 'audio' | 'image' | 'video', token: string, input: HTMLInputElement | null): void {
+    const key = target === 'audio' ? 'audioNameTemplate' : target === 'image' ? 'imageNameTemplate' : 'videoNameTemplate';
+    const current = this.project.output[key] || '';
+    this.project.output[key] = this.insertTokenAtCursor(current, token, input);
+    this.cdr.detectChanges();
+  }
+
+  public resetMediaNameTemplates(): void {
+    this.project.output.audioNameTemplate = '{id}_{track}_{seq}_{start}-{end}';
+    this.project.output.imageNameTemplate = '{id}_{track}_{seq}_{mid}';
+    this.project.output.videoNameTemplate = '{id}_{track}_{seq}_{start}-{end}';
+  }
+
+  public getMediaNamePreview(type: 'audio' | 'image' | 'video'): string {
+    const template =
+      type === 'audio'
+        ? (this.project.output.audioNameTemplate || '{id}_{track}_{seq}_{start}-{end}')
+        : type === 'image'
+          ? (this.project.output.imageNameTemplate || '{id}_{track}_{seq}_{mid}')
+          : (this.project.output.videoNameTemplate || '{id}_{track}_{seq}_{start}-{end}');
+
+    const ext = type === 'audio' ? 'mp3' : type === 'image' ? 'jpg' : 'mp4';
+    const safeTrack = (this.project.tracks[0]?.label || 'JP').trim().replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_') || 'JP';
+    const sampleIdRaw = this.getIdFormatPreview();
+    const safeId = sampleIdRaw.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_') || 'Card_0001';
+
+    let formatted = template
+      .replace(/\{id\}/gi, safeId)
+      .replace(/\{track\}/gi, safeTrack)
+      .replace(/\{seq\}/gi, '0001')
+      .replace(/\{start\}/gi, '0.01.23.450')
+      .replace(/\{end\}/gi, '0.01.26.100')
+      .replace(/\{mid\}/gi, '0.01.24.775')
+      .replace(/[\\/:*?"<>|]/g, '')
+      .trim();
+
+    if (!formatted) formatted = `${safeId}_0001`;
+    if (formatted.toLowerCase().endsWith(`.${ext}`)) return formatted;
+    return `${formatted}.${ext}`;
   }
 
   public showToast(message: string, type: 'success' | 'error' | 'info'): void {

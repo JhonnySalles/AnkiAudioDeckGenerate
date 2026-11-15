@@ -688,23 +688,24 @@ export class SubtitleParserService {
   public buildCuesFromAnkiImport(
     result: AnkiParseResult,
     mappings: AnkiColumnMapping[]
-  ): { episodeName?: string; tracks: { label: string; cues: SubtitleCue[] }[] } {
+  ): { episodeName?: string; hasImportedId: boolean; tracks: { label: string; cues: SubtitleCue[] }[] } {
     const rawRows = result.rawRows;
     const idMapping = mappings.find(m => m.type === 'id');
     const idColIdx = idMapping ? idMapping.index : -1;
+    const hasImportedId = idColIdx !== -1;
 
-    // 1. Extrair os tempos de cada linha (startMs e endMs)
-    const rowTimings: { startMs: number; endMs: number }[] = [];
+    // 1. Extrair os tempos de cada linha (startMs e endMs) e preservar o ID original selecionado
+    const rowTimings: { startMs: number; endMs: number; rawId?: string }[] = [];
 
     for (let rIdx = 0; rIdx < rawRows.length; rIdx++) {
       const row = rawRows[rIdx];
       let startMs: number | null = null;
       let endMs: number | null = null;
+      const rawId = idColIdx !== -1 ? (row[idColIdx] || '').trim() : '';
 
       // Tenta extrair timestamp do ID
-      if (idColIdx !== -1 && row[idColIdx]) {
-        const idText = row[idColIdx];
-        const match = idText.match(/(\d{1,2}:\d{2}:\d{2}(?:\.\d+)?)/);
+      if (rawId) {
+        const match = rawId.match(/(\d{1,2}:\d{2}:\d{2}(?:\.\d+)?)/);
         if (match) {
           startMs = this.timeToMs(match[1]);
         }
@@ -735,7 +736,7 @@ export class SubtitleParserService {
         startMs = rIdx * 3000;
       }
 
-      rowTimings.push({ startMs, endMs: endMs || 0 });
+      rowTimings.push({ startMs, endMs: endMs || 0, rawId: rawId || undefined });
     }
 
     // Calcular endMs relativo caso não tenha sido preenchido
@@ -778,7 +779,7 @@ export class SubtitleParserService {
 
     // Se nenhuma faixa foi criada com new_track, criar uma padrão para não perder dados
     if (targetTracks.length === 0) {
-      const firstActive = mappings.find(m => m.type !== 'ignore' && m.type !== 'id');
+      const firstActive = mappings.find(m => m.type !== 'ignore' && m.type !== 'id') || mappings.find(m => m.type !== 'ignore');
       targetTracks.push({
         label: 'Sub 1',
         primaryColIndex: firstActive ? firstActive.index : 0,
@@ -789,7 +790,8 @@ export class SubtitleParserService {
     // Mapeia colunas combinadas
     for (const m of mappings) {
       if (m.type !== 'ignore' && m.type !== 'id' && m.action === 'combine') {
-        const targetTrack = targetTracks.find(t => t.primaryColIndex === m.combineWithTrackIndex) || targetTracks[0];
+        const targetIdx = Number(m.combineWithTrackIndex);
+        const targetTrack = targetTracks.find(t => t.primaryColIndex === targetIdx) || targetTracks[0];
         if (targetTrack && !targetTrack.combinedColIndices.includes(m.index)) {
           targetTrack.combinedColIndices.push(m.index);
         }
@@ -852,7 +854,8 @@ export class SubtitleParserService {
           origEndMs: timing.endMs,
           text: text.trim(),
           audioFileName,
-          imageFileName
+          imageFileName,
+          importedId: timing.rawId
         });
       }
 
@@ -864,6 +867,7 @@ export class SubtitleParserService {
 
     return {
       episodeName: result.episodeName,
+      hasImportedId,
       tracks: createdTracks
     };
   }
