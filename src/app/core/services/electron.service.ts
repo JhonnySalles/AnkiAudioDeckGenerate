@@ -73,7 +73,8 @@ export interface ElectronAPI {
   extractEmbeddedSubtitle: (filePath: string, subStreamIndex: number) => Promise<string>;
   selectVideoFile: () => Promise<{ filePath: string; filename: string; probeData: any } | null>;
   selectSubFiles: () => Promise<Array<{ filePath: string; filename: string; content: string }> | null>;
-  exportSubtitleProject: (project: any, options?: any) => Promise<{ txtPath: string; exportedCount: number; errors: string[] }>;
+  exportSubtitleProject: (project: any, options?: any) => Promise<{ txtPath: string; exportedCount: number; cancelled?: boolean; errors: string[] }>;
+  cancelSubtitleExport?: () => Promise<boolean>;
   onExportProgress: (callback: (progress: any) => void) => () => void;
   saveProjectDialog: (project: any, defaultPath?: string) => Promise<string | null>;
   saveProjectToPath: (filePath: string, project: any) => Promise<string>;
@@ -243,9 +244,14 @@ export class ElectronService {
     return await this.api.selectSubFiles();
   }
 
-  public async exportSubtitleProject(project: any, options?: any): Promise<{ txtPath: string; exportedCount: number; errors: string[] }> {
+  public async exportSubtitleProject(project: any, options?: any): Promise<{ txtPath: string; exportedCount: number; cancelled?: boolean; errors: string[] }> {
     if (!this.isElectron) return { txtPath: '', exportedCount: 0, errors: ['Apenas no app Desktop'] };
     return await this.api.exportSubtitleProject(project, options);
+  }
+
+  public async cancelSubtitleExport(): Promise<boolean> {
+    if (!this.isElectron || !this.api.cancelSubtitleExport) return false;
+    return await this.api.cancelSubtitleExport();
   }
 
   public onExportProgress(callback: (progress: any) => void): () => void {

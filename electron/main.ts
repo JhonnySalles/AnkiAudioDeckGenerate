@@ -582,12 +582,22 @@ function registerIpcHandlers(): void {
         mainWindow?.webContents.send('subs:export-progress', progress);
       });
 
-      console.log(`[Export] Concluído com sucesso: ${result.exportedCount} cards gerados.`);
+      if (result.cancelled) {
+        console.log(`[Export] Exportação cancelada pelo usuário após ${result.exportedCount} cards.`);
+      } else {
+        console.log(`[Export] Concluído com sucesso: ${result.exportedCount} cards gerados.`);
+      }
       return result;
     } catch (err: any) {
       console.error('[Export] Erro ao exportar projeto:', err);
       throw err;
     }
+  });
+
+  ipcMain.handle('subs:cancel-export', () => {
+    console.log('[Export] Solicitação de cancelamento recebida.');
+    SubtitleExportService.getInstance().cancelExport();
+    return true;
   });
 
   ipcMain.handle('project:save-to-path', async (_event, filePath: string, project: SubtitleProject) => {

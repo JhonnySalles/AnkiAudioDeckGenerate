@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectSubFiles: () => ipcRenderer.invoke('dialog:select-sub-files'),
   exportSubtitleProject: (project: any, options?: any) =>
     ipcRenderer.invoke('subs:export-project', { project, options }),
+  cancelSubtitleExport: () => ipcRenderer.invoke('subs:cancel-export'),
   onExportProgress: (callback: (progress: any) => void) => {
     const sub = (_: any, data: any) => callback(data);
     ipcRenderer.on('subs:export-progress', sub);

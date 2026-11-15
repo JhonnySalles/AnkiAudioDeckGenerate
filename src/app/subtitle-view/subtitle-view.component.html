@@ -573,6 +573,11 @@
           <span>Card {{ exportProgress.current }} de {{ exportProgress.total }}</span>
           <span class="font-bold text-indigo-300">{{ exportProgress.percentage }}%</span>
         </div>
+        <button (click)="cancelExport()"
+                [disabled]="isCancellingExport"
+                class="w-full py-2 mt-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-lg shadow-sm transition disabled:opacity-50">
+          {{ isCancellingExport ? 'Cancelando...' : 'Cancelar' }}
+        </button>
       </div>
 
       <!-- Ações pós-conclusão -->

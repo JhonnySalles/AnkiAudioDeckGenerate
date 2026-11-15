@@ -6,6 +6,7 @@ import { SettingsService } from './settings.service';
 
 export class SubtitleExportService {
   private static instance: SubtitleExportService;
+  private isCancelled = false;
 
   private constructor() {}
 
@@ -14,6 +15,11 @@ export class SubtitleExportService {
       SubtitleExportService.instance = new SubtitleExportService();
     }
     return SubtitleExportService.instance;
+  }
+
+  public cancelExport(): void {
+    this.isCancelled = true;
+    FfmpegService.getInstance().cancelAllActive();
   }
 
   private sanitizeBase(text: string): string {
@@ -44,8 +50,10 @@ export class SubtitleExportService {
     project: SubtitleProject,
     options?: Partial<SubtitleExportOptions>,
     onProgress?: (p: SubtitleExportProgress) => void
-  ): Promise<{ txtPath: string; exportedCount: number; errors: string[] }> {
+  ): Promise<{ txtPath: string; exportedCount: number; cancelled?: boolean; errors: string[] }> {
     const ffmpeg = FfmpegService.getInstance();
+    this.isCancelled = false;
+    ffmpeg.resetCancel();
     const settings = SettingsService.getInstance().getSettings();
 
     const generateAudio = options?.generateAudio !== false;
@@ -133,6 +141,21 @@ export class SubtitleExportService {
       return keySuffix;
     };
 
+    // Mapear quais faixas têm colunas selecionadas para cada tipo de mídia no arquivo de saída
+    const activeSoundTracks = new Set<string>();
+    const activeImageTracks = new Set<string>();
+    const activeVideoTracks = new Set<string>();
+
+    for (const colKey of (outputConfig.columns || [])) {
+      if (colKey.startsWith('sound_')) {
+        activeSoundTracks.add(resolveTrackId(colKey.replace('sound_', '')));
+      } else if (colKey.startsWith('image_')) {
+        activeImageTracks.add(resolveTrackId(colKey.replace('image_', '')));
+      } else if (colKey.startsWith('video_')) {
+        activeVideoTracks.add(resolveTrackId(colKey.replace('video_', '')));
+      }
+    }
+
     // Estrutura para enfileirar as tarefas de mídia a serem processadas pelo FFmpeg
     interface RowMediaTask {
       mediaFilePath: string;
@@ -199,32 +222,42 @@ export class SubtitleExportService {
         const hasCustomImage = !!(cell.customImagePath && fs.existsSync(cell.customImagePath));
         const hasCustomAudio = !!(cell.customAudioPath && fs.existsSync(cell.customAudioPath));
 
+        const wantAudioForTrack = generateAudio && activeSoundTracks.has(track.id);
+        const wantImageForTrack = generateImages && activeImageTracks.has(track.id);
+        const wantVideoForTrack = generateVideos && activeVideoTracks.has(track.id);
+
         trackData[track.id] = {
-          soundTag: (generateAudio && (mediaFilePath || hasCustomAudio || cell.audioFileName)) ? `[sound:${audioBaseName}]` : '',
-          imageTag: (generateImages && (hasRealVideo || hasCustomImage || cell.imageFileName)) ? `<img src="${imageBaseName}">` : '',
-          videoTag: (generateVideos && hasRealVideo) ? `[sound:${videoBaseName}]` : '',
+          soundTag: (wantAudioForTrack && (mediaFilePath || hasCustomAudio || cell.audioFileName)) ? `[sound:${audioBaseName}]` : '',
+          imageTag: (wantImageForTrack && (hasRealVideo || hasCustomImage || cell.imageFileName)) ? `<img src="${imageBaseName}">` : '',
+          videoTag: (wantVideoForTrack && hasRealVideo) ? `[sound:${videoBaseName}]` : '',
           text: cleanText,
           start: this.msToIdTime(cell.startMs),
           end: this.msToIdTime(cell.endMs)
         };
 
         if ((mediaFilePath && fs.existsSync(mediaFilePath)) || hasCustomImage || hasCustomAudio) {
-          currentTasks.push({
-            mediaFilePath: mediaFilePath || '',
-            streamIdx,
-            effectiveStart,
-            effectiveEnd,
-            midTime,
-            audioBaseName,
-            imageBaseName,
-            videoBaseName,
-            customImagePath: cell.customImagePath,
-            customAudioPath: cell.customAudioPath,
-            hasRealVideo: hasRealVideo || hasCustomImage,
-            shouldCutAudio: generateAudio && (!!mediaFilePath || hasCustomAudio),
-            shouldExtractImage: generateImages && (hasRealVideo || hasCustomImage),
-            shouldCutVideo: generateVideos && hasRealVideo
-          });
+          const shouldCutAudio = wantAudioForTrack && (!!mediaFilePath || hasCustomAudio);
+          const shouldExtractImage = wantImageForTrack && (hasRealVideo || hasCustomImage);
+          const shouldCutVideo = wantVideoForTrack && hasRealVideo;
+
+          if (shouldCutAudio || shouldExtractImage || shouldCutVideo) {
+            currentTasks.push({
+              mediaFilePath: mediaFilePath || '',
+              streamIdx,
+              effectiveStart,
+              effectiveEnd,
+              midTime,
+              audioBaseName,
+              imageBaseName,
+              videoBaseName,
+              customImagePath: cell.customImagePath,
+              customAudioPath: cell.customAudioPath,
+              hasRealVideo: hasRealVideo || hasCustomImage,
+              shouldCutAudio,
+              shouldExtractImage,
+              shouldCutVideo
+            });
+          }
         }
       }
 
@@ -299,12 +332,15 @@ export class SubtitleExportService {
     // Grava o arquivo de saída ANTES de qualquer processamento pesado de mídia
     fs.writeFileSync(outTxtFile, lines.join('\n'), 'utf-8');
 
+    const anyMediaNeeded = rowsMediaTasks.some(t => t.length > 0);
+    let processedCount = validRows.length;
+
     if (onProgress) {
       onProgress({
         current: 0,
         total,
         percentage: 0,
-        status: (generateAudio || generateImages || generateVideos)
+        status: anyMediaNeeded
           ? `Arquivo (${isCsv ? 'CSV' : isSql ? 'SQL' : 'TXT'}) gravado com sucesso! Iniciando extração de mídia...`
           : `Exportação concluída com sucesso! (Arquivo gerado)`
       });
@@ -313,11 +349,15 @@ export class SubtitleExportService {
     // =========================================================================
     // ETAPA 2: EXTRAÇÃO DE ÁUDIOS, IMAGENS E VÍDEOS COM O FFMPEG
     // =========================================================================
-    if (generateAudio || generateImages || generateVideos) {
+    if (anyMediaNeeded) {
+      processedCount = 0;
       for (let i = 0; i < rowsMediaTasks.length; i++) {
+        if (this.isCancelled) break;
         const tasks = rowsMediaTasks[i];
 
         for (const task of tasks) {
+          if (this.isCancelled) break;
+
           // 1. Gerar áudio se habilitado
           if (task.shouldCutAudio) {
             if (task.customAudioPath && fs.existsSync(task.customAudioPath)) {
@@ -343,14 +383,18 @@ export class SubtitleExportService {
                   normalizeAudio
                 });
 
-                if (mediaDir && fs.existsSync(mediaDir)) {
+                if (!this.isCancelled && mediaDir && fs.existsSync(mediaDir)) {
                   fs.copyFileSync(tempAudioPath, path.join(mediaDir, task.audioBaseName));
                 }
               } catch (err: any) {
-                errors.push(`Áudio ${task.audioBaseName}: ${err.message}`);
+                if (!this.isCancelled) {
+                  errors.push(`Áudio ${task.audioBaseName}: ${err.message}`);
+                }
               }
             }
           }
+
+          if (this.isCancelled) break;
 
           // 2. Gerar snapshot apenas se a fonte tiver vídeo real e geração de imagem estiver habilitada
           if (task.shouldExtractImage) {
@@ -373,14 +417,18 @@ export class SubtitleExportService {
                   height: imageHeight
                 });
 
-                if (mediaDir && fs.existsSync(mediaDir)) {
+                if (!this.isCancelled && mediaDir && fs.existsSync(mediaDir)) {
                   fs.copyFileSync(tempImagePath, path.join(mediaDir, task.imageBaseName));
                 }
               } catch (err: any) {
-                errors.push(`Imagem ${task.imageBaseName}: ${err.message}`);
+                if (!this.isCancelled) {
+                  errors.push(`Imagem ${task.imageBaseName}: ${err.message}`);
+                }
               }
             }
           }
+
+          if (this.isCancelled) break;
 
           // 3. Gerar vídeo clip apenas se a fonte tiver vídeo real e geração de vídeo estiver habilitada
           if (task.shouldCutVideo && task.hasRealVideo) {
@@ -397,15 +445,20 @@ export class SubtitleExportService {
                 bitrate: videoBitrate
               });
 
-              if (mediaDir && fs.existsSync(mediaDir)) {
+              if (!this.isCancelled && mediaDir && fs.existsSync(mediaDir)) {
                 fs.copyFileSync(tempVideoPath, path.join(mediaDir, task.videoBaseName));
               }
             } catch (err: any) {
-              errors.push(`Vídeo ${task.videoBaseName}: ${err.message}`);
+              if (!this.isCancelled) {
+                errors.push(`Vídeo ${task.videoBaseName}: ${err.message}`);
+              }
             }
           }
         }
 
+        if (this.isCancelled) break;
+
+        processedCount = i + 1;
         if (onProgress) {
           const percentage = Math.round(((i + 1) / total) * 100);
           onProgress({
@@ -429,7 +482,8 @@ export class SubtitleExportService {
 
     return {
       txtPath: outTxtFile,
-      exportedCount: validRows.length,
+      exportedCount: processedCount,
+      cancelled: this.isCancelled,
       errors
     };
   }

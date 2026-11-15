@@ -117,6 +117,7 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
   public shiftModalDeltaMs = 0;
 
   public exportProgress = { current: 0, total: 0, percentage: 0, status: '' };
+  public isCancellingExport = false;
   public lastExportResult: { txtPath: string; exportedCount: number } | null = null;
   private progressUnsub: (() => void) | null = null;
   private menuUnsub: (() => void) | null = null;
@@ -1286,6 +1287,7 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
     }
 
     this.isExporting = true;
+    this.isCancellingExport = false;
     this.exportProgress = {
       current: 0,
       total: this.project.rows.length,
@@ -1322,20 +1324,40 @@ export class SubtitleViewComponent implements OnInit, OnDestroy {
         videoBitrate: settings?.videoBitrate
       });
 
-      this.lastExportResult = {
-        txtPath: result.txtPath,
-        exportedCount: result.exportedCount
-      };
-
-      if (result.errors && result.errors.length > 0) {
-        this.showToast(`Concluído com avisos: ${result.exportedCount} cards gerados. (${result.errors.length} avisos)`, 'info');
+      if (result.cancelled) {
+        this.lastExportResult = null;
+        this.showToast('Exportação cancelada pelo usuário.', 'info');
       } else {
-        this.showToast(`Exportação concluída com sucesso! ${result.exportedCount} cards gerados.`, 'success');
+        this.lastExportResult = {
+          txtPath: result.txtPath,
+          exportedCount: result.exportedCount
+        };
+
+        if (result.errors && result.errors.length > 0) {
+          this.showToast(`Concluído com avisos: ${result.exportedCount} cards gerados. (${result.errors.length} avisos)`, 'info');
+        } else {
+          this.showToast(`Exportação concluída com sucesso! ${result.exportedCount} cards gerados.`, 'success');
+        }
       }
     } catch (err: any) {
       this.showToast('Erro ao exportar: ' + (err.message || err), 'error');
     } finally {
       this.isExporting = false;
+      this.isCancellingExport = false;
+    }
+  }
+
+  public async cancelExport(): Promise<void> {
+    if (!this.isExporting || this.isCancellingExport) return;
+    this.isCancellingExport = true;
+    this.exportProgress = {
+      ...this.exportProgress,
+      status: 'Cancelando exportação...'
+    };
+    try {
+      await this.electron.cancelSubtitleExport();
+    } catch (err: any) {
+      this.showToast('Erro ao cancelar exportação: ' + (err.message || err), 'error');
     }
   }
 

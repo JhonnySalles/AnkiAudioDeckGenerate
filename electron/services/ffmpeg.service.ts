@@ -1,7 +1,7 @@
 import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import {
   CutAudioOptions,
   ExtractSnapshotOptions,
@@ -15,6 +15,8 @@ export class FfmpegService {
   private static instance: FfmpegService;
   private ffmpegPath: string = '';
   private cacheDir: string;
+  private activeProcesses = new Set<ChildProcess>();
+  private isCancelling = false;
 
   private constructor() {
     this.cacheDir = path.join(app.getPath('userData'), 'media_cache');
@@ -33,6 +35,29 @@ export class FfmpegService {
 
   public getCacheDir(): string {
     return this.cacheDir;
+  }
+
+  public resetCancel(): void {
+    this.isCancelling = false;
+  }
+
+  public cancelAllActive(): void {
+    this.isCancelling = true;
+    for (const proc of this.activeProcesses) {
+      try {
+        proc.kill('SIGKILL');
+      } catch {
+        // ignore
+      }
+    }
+    this.activeProcesses.clear();
+  }
+
+  private trackProcess(proc: ChildProcess): void {
+    this.activeProcesses.add(proc);
+    const cleanup = () => this.activeProcesses.delete(proc);
+    proc.once('close', cleanup);
+    proc.once('error', cleanup);
   }
 
   private initFfmpegPath(): void {
@@ -273,7 +298,12 @@ export class FfmpegService {
     };
 
     const runFfmpeg = (args: string[]) => new Promise<void>((resolve, reject) => {
+      if (this.isCancelling) {
+        reject(new Error('Exportação cancelada pelo usuário.'));
+        return;
+      }
       const proc = spawn(this.ffmpegPath, args);
+      this.trackProcess(proc);
       let stderr = '';
 
       proc.stderr.on('data', (chunk) => {
@@ -281,6 +311,10 @@ export class FfmpegService {
       });
 
       proc.on('close', (code) => {
+        if (this.isCancelling) {
+          reject(new Error('Exportação cancelada pelo usuário.'));
+          return;
+        }
         if (code === 0 && fs.existsSync(resolvedOut) && fs.statSync(resolvedOut).size > 0) {
           resolve();
         } else {
@@ -298,6 +332,9 @@ export class FfmpegService {
       await runFfmpeg(buildArgs(true));
       return resolvedOut;
     } catch (filterErr) {
+      if (this.isCancelling) {
+        throw filterErr;
+      }
       // 2. Se falhar (ex: áudio 100% silêncio descartado pelo silenceremove), tenta sem os filtros avançados
       try {
         await runFfmpeg(buildArgs(false));
@@ -345,6 +382,7 @@ export class FfmpegService {
       ];
 
       const proc = spawn(this.ffmpegPath, args);
+      this.trackProcess(proc);
       let stderr = '';
 
       proc.stderr.on('data', (chunk) => {
@@ -352,6 +390,10 @@ export class FfmpegService {
       });
 
       proc.on('close', (code) => {
+        if (this.isCancelling) {
+          reject(new Error('Exportação cancelada pelo usuário.'));
+          return;
+        }
         if (code === 0 && fs.existsSync(resolvedOut)) {
           resolve(resolvedOut);
         } else {
@@ -420,6 +462,7 @@ export class FfmpegService {
       ];
 
       const proc = spawn(this.ffmpegPath, args);
+      this.trackProcess(proc);
       let stderr = '';
 
       proc.stderr.on('data', (chunk) => {
@@ -427,6 +470,10 @@ export class FfmpegService {
       });
 
       proc.on('close', (code) => {
+        if (this.isCancelling) {
+          reject(new Error('Exportação cancelada pelo usuário.'));
+          return;
+        }
         if (code === 0 && fs.existsSync(resolvedOut)) {
           resolve(resolvedOut);
         } else {
